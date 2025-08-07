@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { supabase } from "@/lib/supabase";
 import { BookOpen, UserCheck, Award, Settings, User, Mail, Phone, Calendar, Save, Plus, Monitor, Clock, LogOut } from "lucide-react";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
@@ -90,7 +90,7 @@ export default function AdminDocente({ activeSidebarItem, setActiveSidebarItem }
   };
 
   // Load access logs from database
-  const loadAccessLogs = async () => {
+  const loadAccessLogs = useCallback(async () => {
     setLogsLoading(true);
     try {
       // For now, we'll create mock data since the access logs table might not exist yet
@@ -114,7 +114,7 @@ export default function AdminDocente({ activeSidebarItem, setActiveSidebarItem }
     } finally {
       setLogsLoading(false);
     }
-  };
+  }, [docentes]);
 
   useEffect(() => {
     loadDocentes();
@@ -124,7 +124,7 @@ export default function AdminDocente({ activeSidebarItem, setActiveSidebarItem }
     if (docentes.length > 0 && activeSidebarItem === 'acceso-docentes') {
       loadAccessLogs();
     }
-  }, [docentes, activeSidebarItem]);
+  }, [docentes, activeSidebarItem, loadAccessLogs]);
 
   // Format date for display
   const formatDate = (dateString: string | null) => {

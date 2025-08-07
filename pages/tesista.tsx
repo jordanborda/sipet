@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/router';
 import { Geist, Geist_Mono } from "next/font/google";
 import { supabase } from "@/lib/supabase";
@@ -104,19 +104,8 @@ export default function Tesista() {
   const [thesisLogs, setThesisLogs] = useState<ThesisLog[]>([]);
   const [loadingLogs, setLoadingLogs] = useState(false);
 
-  useEffect(() => {
-    checkAuth();
-  }, []);
-
-  useEffect(() => {
-    if (user) {
-      loadLineasInvestigacion();
-      loadUserThesisProject();
-    }
-  }, [user]);
-
   // Función para cargar el proyecto de tesis del usuario
-  const loadUserThesisProject = async () => {
+  const loadUserThesisProject = useCallback(async () => {
     if (!user) return;
 
     try {
@@ -146,7 +135,84 @@ export default function Tesista() {
     } catch (err) {
       console.error('Error:', err);
     }
-  };
+  }, [user]);
+
+  const checkAuth = useCallback(async () => {
+    console.log('🔐 TESISTA: Iniciando verificación de autenticación');
+    
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      console.log('📊 TESISTA: Sesión obtenida:', session ? 'presente' : 'ausente');
+      
+      if (!session) {
+        console.log('❌ TESISTA: No hay sesión, redirigiendo al login');
+        router.push('/');
+        return;
+      }
+
+      console.log('🔍 TESISTA: Obteniendo datos del usuario de la BD');
+      
+      const { data: userData, error } = await supabase
+        .from('users')
+        .select('*')
+        .eq('auth_user_id', session.user.id)
+        .single();
+
+      if (error) {
+        console.error('❌ TESISTA: Error al obtener datos del usuario:', error);
+        router.push('/dashboard');
+        return;
+      }
+
+      console.log('📊 TESISTA: Datos del usuario obtenidos:', {
+        dni: userData.dni,
+        codigo_matricula: userData.codigo_matricula,
+        first_time_setup_completed: userData.first_time_setup_completed
+      });
+
+      if (!userData.dni || !userData.codigo_matricula) {
+        console.log('📝 TESISTA: Usuario no tiene DNI o código de matrícula, redirigiendo al dashboard');
+        router.push('/dashboard');
+        return;
+      }
+
+      console.log('✅ TESISTA: Usuario tiene datos completos, permitiendo acceso');
+
+      const userProfile: User = {
+        id: userData.id,
+        email: userData.email,
+        full_name: userData.full_name || `${userData.first_name} ${userData.last_name}`.trim() || userData.email,
+        first_name: userData.first_name,
+        last_name: userData.last_name || '',
+        avatar_url: userData.avatar_url,
+        dni: userData.dni,
+        codigo_matricula: userData.codigo_matricula,
+        student_id: userData.student_id || userData.codigo_matricula
+      };
+
+      setUser(userProfile);
+      console.log('👤 TESISTA: Usuario configurado correctamente');
+      
+    } catch (error) {
+      console.error('💥 TESISTA: Error en autenticación:', error);
+      router.push('/');
+    } finally {
+      console.log('🏁 TESISTA: Finalizando checkAuth');
+      setLoading(false);
+    }
+  }, [router]);
+
+  useEffect(() => {
+    checkAuth();
+  }, [checkAuth]);
+
+  useEffect(() => {
+    if (user) {
+      loadLineasInvestigacion();
+      loadUserThesisProject();
+    }
+  }, [user, loadUserThesisProject]);
 
   // Función para cargar los logs de trámites del proyecto
   const loadThesisLogs = async (projectId: string) => {
@@ -215,72 +281,6 @@ export default function Tesista() {
         isCurrent ? 'shadow-lg border-2 border-blue-300' : 'shadow-sm'
       }`
     };
-  };
-
-  const checkAuth = async () => {
-    console.log('🔐 TESISTA: Iniciando verificación de autenticación');
-    
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      
-      console.log('📊 TESISTA: Sesión obtenida:', session ? 'presente' : 'ausente');
-      
-      if (!session) {
-        console.log('❌ TESISTA: No hay sesión, redirigiendo al login');
-        router.push('/');
-        return;
-      }
-
-      console.log('🔍 TESISTA: Obteniendo datos del usuario de la BD');
-      
-      const { data: userData, error } = await supabase
-        .from('users')
-        .select('*')
-        .eq('auth_user_id', session.user.id)
-        .single();
-
-      if (error) {
-        console.error('❌ TESISTA: Error al obtener datos del usuario:', error);
-        router.push('/dashboard');
-        return;
-      }
-
-      console.log('📊 TESISTA: Datos del usuario obtenidos:', {
-        dni: userData.dni,
-        codigo_matricula: userData.codigo_matricula,
-        first_time_setup_completed: userData.first_time_setup_completed
-      });
-
-      if (!userData.dni || !userData.codigo_matricula) {
-        console.log('📝 TESISTA: Usuario no tiene DNI o código de matrícula, redirigiendo al dashboard');
-        router.push('/dashboard');
-        return;
-      }
-
-      console.log('✅ TESISTA: Usuario tiene datos completos, permitiendo acceso');
-
-      const userProfile: User = {
-        id: userData.id,
-        email: userData.email,
-        full_name: userData.full_name || `${userData.first_name} ${userData.last_name}`.trim() || userData.email,
-        first_name: userData.first_name,
-        last_name: userData.last_name || '',
-        avatar_url: userData.avatar_url,
-        dni: userData.dni,
-        codigo_matricula: userData.codigo_matricula,
-        student_id: userData.student_id || userData.codigo_matricula
-      };
-
-      setUser(userProfile);
-      console.log('👤 TESISTA: Usuario configurado correctamente');
-      
-    } catch (error) {
-      console.error('💥 TESISTA: Error en autenticación:', error);
-      router.push('/');
-    } finally {
-      console.log('🏁 TESISTA: Finalizando checkAuth');
-      setLoading(false);
-    }
   };
 
   const loadLineasInvestigacion = async () => {
@@ -2228,7 +2228,7 @@ export default function Tesista() {
                             <p>• <strong>Conserva el formato original</strong> - no modificar márgenes, fuentes ni estructura</p>
                             <p>• <strong>Guarda tu trabajo frecuentemente</strong> y mantén copias de respaldo</p>
                             <p>• <strong>Convierte a PDF</strong> solo cuando esté completamente terminado para subir a la plataforma</p>
-                            <p>• <strong>Revisa los reglamentos</strong> en la sección "Herramientas del Tesista" antes de completar</p>
+                            <p>• <strong>Revisa los reglamentos</strong> en la sección &quot;Herramientas del Tesista&quot; antes de completar</p>
                           </div>
                         </div>
                       </div>

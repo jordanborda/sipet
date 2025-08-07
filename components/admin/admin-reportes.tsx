@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { supabase } from "@/lib/supabase";
 import { BarChart3, TrendingUp, Settings, MapPin, Calendar, Users, FileText, Award, Download, Filter, Search, Check, X, Save, AlertCircle } from "lucide-react";
 import { toast } from "sonner";
@@ -107,7 +107,7 @@ export default function AdminReportes({ activeSidebarItem, setActiveSidebarItem 
     }
   };
 
-  const filterUsers = () => {
+  const filterUsers = useCallback(() => {
     let filtered = [...users];
 
     // Search filter
@@ -137,7 +137,7 @@ export default function AdminReportes({ activeSidebarItem, setActiveSidebarItem 
     }
 
     setFilteredUsers(filtered);
-  };
+  }, [users, userFilters]);
 
   const handleRoleChange = (userId: string, role: keyof UserManagement, value: boolean) => {
     setPendingRoleChanges(prev => ({
@@ -184,7 +184,7 @@ export default function AdminReportes({ activeSidebarItem, setActiveSidebarItem 
   // Effects
   useEffect(() => {
     filterUsers();
-  }, [userFilters, users]);
+  }, [userFilters, users, filterUsers]);
 
   // Load report data from database
   const loadReportData = async () => {
@@ -591,7 +591,7 @@ export default function AdminReportes({ activeSidebarItem, setActiveSidebarItem 
                   <div className="flex items-center">
                     <AlertCircle className="w-5 h-5 text-yellow-600 mr-2" />
                     <p className="text-sm text-yellow-800">
-                      Tienes cambios sin guardar. Haz clic en "Guardar Cambios" para aplicar las modificaciones.
+                      Tienes cambios sin guardar. Haz clic en &quot;Guardar Cambios&quot; para aplicar las modificaciones.
                     </p>
                   </div>
                 </div>
@@ -744,7 +744,7 @@ export default function AdminReportes({ activeSidebarItem, setActiveSidebarItem 
                     <div className="text-center py-8">
                       <Users className="w-12 h-12 mx-auto mb-4 text-gray-400" />
                       <p className="text-gray-600">No hay usuarios cargados</p>
-                      <p className="text-gray-500 text-sm">Haz clic en "Cargar Usuarios" para ver los usuarios</p>
+                      <p className="text-gray-500 text-sm">Haz clic en &quot;Cargar Usuarios&quot; para ver los usuarios</p>
                     </div>
                   )}
                 </div>

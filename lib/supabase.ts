@@ -67,11 +67,55 @@ export const signUpWithEmail = async (email: string, password: string, metadata?
     password,
     options: {
       data: metadata,
+      emailRedirectTo: `${window.location.origin}/auth/callback?verified=true`,
     },
   })
   
   if (error) {
     console.error('Error during email sign up:', error.message)
+    return { error }
+  }
+  
+  return { data }
+}
+
+export const resendEmailConfirmation = async (email: string) => {
+  const { data, error } = await supabase.auth.resend({
+    type: 'signup',
+    email,
+    options: {
+      emailRedirectTo: `${window.location.origin}/auth/callback?verified=true`,
+    },
+  })
+  
+  if (error) {
+    console.error('Error resending email confirmation:', error.message)
+    return { error }
+  }
+  
+  return { data }
+}
+
+export const sendPasswordResetEmail = async (email: string) => {
+  const { data, error } = await supabase.auth.resetPasswordForEmail(email, {
+    redirectTo: `${window.location.origin}/auth/reset-password`,
+  })
+  
+  if (error) {
+    console.error('Error sending password reset email:', error.message)
+    return { error }
+  }
+  
+  return { data }
+}
+
+export const updatePassword = async (newPassword: string) => {
+  const { data, error } = await supabase.auth.updateUser({
+    password: newPassword
+  })
+  
+  if (error) {
+    console.error('Error updating password:', error.message)
     return { error }
   }
   

@@ -48,7 +48,7 @@ export default function Header({ title = "Universidad San Martín", subtitle = "
     return () => {
       subscription.unsubscribe();
     };
-  }, []);
+  }, [router]);
 
   const loadUser = async () => {
     try {

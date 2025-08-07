@@ -1,13 +1,11 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/router';
 import { Geist, Geist_Mono } from "next/font/google";
-import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { supabase } from "@/lib/supabase";
 import Header from "@/components/Header";
 import { toast } from "sonner";
+import PerfilComponent from "@/components/users/perfil";
 
 // Componente para el toast de acceso denegado
 const AccessDeniedToast = ({ t }: { t: string | number }) => {
@@ -91,74 +89,18 @@ interface User {
   is_administrator: boolean;
 }
 
-interface FirstTimeSetupModalProps {
-  isOpen: boolean;
-  onComplete: (dni: string, codigoMatricula: string) => void;
-  loading: boolean;
+interface OnboardingData {
+  role: 'estudiante' | 'docente' | 'coordinador' | null;
+  firstName: string;
+  secondName: string;
+  lastName: string;
+  dni: string;
+  code: string;
+  faculty: string;
+  professionalSchool: string;
+  phone: string;
+  email: string;
 }
-
-const FirstTimeSetupModal = ({ isOpen, onComplete, loading }: FirstTimeSetupModalProps) => {
-  const [dni, setDni] = useState('');
-  const [codigoMatricula, setCodigoMatricula] = useState('');
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (dni.trim() && codigoMatricula.trim()) {
-      onComplete(dni.trim(), codigoMatricula.trim());
-    }
-  };
-
-  if (!isOpen) return null;
-
-  return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <Card className="w-full max-w-md bg-white">
-        <CardHeader className="text-center">
-          <CardTitle className="text-xl text-gray-900">¡Bienvenido!</CardTitle>
-          <CardDescription className="text-sm text-gray-600">
-            Para completar tu registro, necesitamos algunos datos adicionales
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="dni" className="text-sm font-medium">DNI</Label>
-              <Input
-                id="dni"
-                type="text"
-                placeholder="12345678"
-                value={dni}
-                onChange={(e) => setDni(e.target.value)}
-                className="h-10 text-sm"
-                maxLength={8}
-                required
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="codigo-matricula" className="text-sm font-medium">Código de Matrícula</Label>
-              <Input
-                id="codigo-matricula"
-                type="text"
-                placeholder="2024-001234"
-                value={codigoMatricula}
-                onChange={(e) => setCodigoMatricula(e.target.value)}
-                className="h-10 text-sm"
-                required
-              />
-            </div>
-            <Button
-              type="submit"
-              className="w-full h-10 text-sm bg-gradient-to-r from-blue-600 to-indigo-700 hover:from-blue-700 hover:to-indigo-800"
-              disabled={loading || !dni.trim() || !codigoMatricula.trim()}
-            >
-              {loading ? 'Guardando...' : 'Completar Registro'}
-            </Button>
-          </form>
-        </CardContent>
-      </Card>
-    </div>
-  );
-};
 
 export default function Dashboard() {
   const router = useRouter();
@@ -167,40 +109,7 @@ export default function Dashboard() {
   const [showSetupModal, setShowSetupModal] = useState(false);
   const [setupLoading, setSetupLoading] = useState(false);
 
-  useEffect(() => {
-    console.log('🏠 DASHBOARD: Componente Dashboard montado');
-    console.log('🌐 DASHBOARD: URL actual:', window.location.href);
-    
-    checkAuth();
-    
-    // Escuchar cambios en el estado de autenticación
-    console.log('👂 DASHBOARD: Configurando listener onAuthStateChange');
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
-        console.log('🔔 DASHBOARD: Auth state change detectado:', {
-          event,
-          userEmail: session?.user?.email,
-          userId: session?.user?.id,
-          provider: session?.user?.app_metadata?.provider
-        });
-        
-        if (event === 'SIGNED_IN' && session) {
-          console.log('✅ DASHBOARD: Usuario firmado, actualizando datos');
-          checkAuth();
-        } else if (event === 'SIGNED_OUT') {
-          console.log('🚪 DASHBOARD: Usuario deslogueado, redirigiendo al login');
-          router.push('/');
-        }
-      }
-    );
-
-    return () => {
-      console.log('🧹 DASHBOARD: Limpiando suscripciones');
-      subscription.unsubscribe();
-    };
-  }, []);
-
-  const checkAuth = async () => {
+  const checkAuth = useCallback(async () => {
     console.log('🔐 DASHBOARD: Iniciando checkAuth');
     
     try {
@@ -259,8 +168,9 @@ export default function Dashboard() {
 
       console.log('✅ DASHBOARD: Datos del usuario obtenidos correctamente');
       
-      // Verificar si el usuario necesita completar setup específicamente para tesista
-      const needsSetupForTesista = !userData.dni || !userData.codigo_matricula;
+      // Verificar si el usuario necesita completar setup (todos los roles son FALSE)
+      const hasAnyRole = userData.is_student || userData.is_advisor || userData.is_reviewer || userData.is_coordinator || userData.is_administrator;
+      const needsRoleSetup = !hasAnyRole;
       
       const userProfile: User = {
         id: userData.id,
@@ -268,7 +178,7 @@ export default function Dashboard() {
         full_name: userData.full_name || `${userData.first_name} ${userData.last_name}`.trim() || userData.email,
         first_name: userData.first_name,
         avatar_url: userData.avatar_url,
-        needs_setup: needsSetupForTesista, // Cambiar la lógica para ser más específica
+        needs_setup: needsRoleSetup, // Usuario necesita asignar un rol
         dni: userData.dni,
         codigo_matricula: userData.codigo_matricula,
         is_student: userData.is_student || false,
@@ -285,7 +195,8 @@ export default function Dashboard() {
         needs_setup: userProfile.needs_setup,
         dni: userProfile.dni,
         codigo_matricula: userProfile.codigo_matricula,
-        needsSetupForTesista: needsSetupForTesista
+        hasAnyRole: hasAnyRole,
+        needsRoleSetup: needsRoleSetup
       });
 
       setUser(userProfile);
@@ -301,36 +212,106 @@ export default function Dashboard() {
       console.log('🏁 DASHBOARD: Finalizando checkAuth, setLoading(false)');
       setLoading(false);
     }
-  };
+  }, [router]);
 
-  const handleCompleteSetup = async (dni: string, codigoMatricula: string) => {
+  useEffect(() => {
+    console.log('🏠 DASHBOARD: Componente Dashboard montado');
+    console.log('🌐 DASHBOARD: URL actual:', window.location.href);
+    
+    checkAuth();
+    
+    // Escuchar cambios en el estado de autenticación
+    console.log('👂 DASHBOARD: Configurando listener onAuthStateChange');
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (event, session) => {
+        console.log('🔔 DASHBOARD: Auth state change detectado:', {
+          event,
+          userEmail: session?.user?.email,
+          userId: session?.user?.id,
+          provider: session?.user?.app_metadata?.provider
+        });
+        
+        if (event === 'SIGNED_IN' && session) {
+          console.log('✅ DASHBOARD: Usuario firmado, actualizando datos');
+          checkAuth();
+        } else if (event === 'SIGNED_OUT') {
+          console.log('🚪 DASHBOARD: Usuario deslogueado, redirigiendo al login');
+          router.push('/');
+        }
+      }
+    );
+
+    return () => {
+      console.log('🧹 DASHBOARD: Limpiando suscripciones');
+      subscription.unsubscribe();
+    };
+  }, [checkAuth, router]);
+
+  const handleCompleteSetup = async (data: OnboardingData) => {
     setSetupLoading(true);
     try {
-      const { data, error } = await supabase.rpc('complete_first_time_setup', {
-        p_dni: dni,
-        p_codigo_matricula: codigoMatricula
-      });
+      // Determinar el rol en el sistema basado en la selección
+      const roleMapping = {
+        'estudiante': { is_student: true },
+        'docente': { is_advisor: true, is_reviewer: true },
+        'coordinador': { is_coordinator: true }
+      };
 
-      if (error) {
-        toast.error('Error al guardar los datos: ' + error.message);
+      const roleFields = roleMapping[data.role!] || {};
+
+      // Actualizar datos en la tabla users
+      const { error: updateError } = await supabase
+        .from('users')
+        .update({
+          first_name: data.firstName,
+          last_name: `${data.secondName ? data.secondName + ' ' : ''}${data.lastName}`.trim(),
+          full_name: `${data.firstName} ${data.secondName ? data.secondName + ' ' : ''}${data.lastName}`.trim(),
+          dni: data.dni,
+          codigo_matricula: data.code,
+          student_id: data.role === 'estudiante' ? data.code : null,
+          phone: data.phone,
+          email: data.email,
+          first_time_setup_completed: true,
+          ...roleFields
+        })
+        .eq('auth_user_id', user?.id);
+
+      if (updateError) {
+        toast.error('Error al actualizar datos del usuario: ' + updateError.message);
         return;
       }
 
-      if (data.error) {
-        toast.error('Error: ' + data.error);
-        return;
+      // Guardar información académica si es estudiante
+      if (data.role === 'estudiante' && data.faculty && data.professionalSchool) {
+        const academicData = {
+          user_id: user?.id,
+          faculty_id: data.faculty,
+          professional_school_id: data.professionalSchool
+        };
+
+        const { error: academicError } = await supabase
+          .from('user_academic_info')
+          .upsert(academicData, { onConflict: 'user_id' });
+
+        if (academicError) {
+          console.warn('Error al guardar información académica:', academicError);
+          // No mostramos error fatal por información académica, solo advertencia
+        }
       }
 
       // Actualizar el estado del usuario
       setUser(prev => prev ? {
         ...prev,
+        first_name: data.firstName,
+        full_name: `${data.firstName} ${data.secondName ? data.secondName + ' ' : ''}${data.lastName}`.trim(),
         needs_setup: false,
-        dni: dni,
-        codigo_matricula: codigoMatricula
+        dni: data.dni,
+        codigo_matricula: data.code,
+        ...roleFields
       } : null);
       
       setShowSetupModal(false);
-      toast.success('¡Datos guardados exitosamente!');
+      toast.success('¡Registro completado exitosamente!');
     } catch (error) {
       console.error('Error:', error);
       toast.error('Error al completar el registro');
@@ -368,12 +349,6 @@ export default function Dashboard() {
       console.log(`❌ DASHBOARD: Usuario no tiene permisos para el rol: ${role}`);
       
       // Show a more elegant permission denied message
-      const roleNames = {
-        'tesista': 'Tesista',
-        'asesor': 'Asesor',
-        'revisor': 'Revisor',
-        'coordinador': 'Coordinador'
-      };
       
       toast.custom((t) => <AccessDeniedToast t={t} />);
       return;
@@ -382,52 +357,30 @@ export default function Dashboard() {
     console.log(`✅ DASHBOARD: Usuario tiene permisos para el rol: ${role}`);
   
 
-    // Si es tesista y necesita setup (falta DNI o código de matrícula), mostrar modal primero
-    if (role === 'tesista' && user.needs_setup) {
-      console.log('📝 DASHBOARD: Tesista necesita setup, mostrando modal');
+    // Si el usuario no tiene ningún rol asignado, mostrar onboarding primero
+    if (user.needs_setup) {
+      console.log('📝 DASHBOARD: Usuario sin roles asignados, mostrando onboarding');
       setShowSetupModal(true);
       return;
     }
 
-    // Si es tesista y ya tiene los datos, permitir acceso directo
-    if (role === 'tesista' && !user.needs_setup) {
-      console.log('✅ DASHBOARD: Tesista tiene datos completos, acceso directo');
-      router.push(`/${role}`);
+    // Si el usuario ya tiene roles asignados, permitir acceso directo
+    if (!user.needs_setup) {
+      console.log(`✅ DASHBOARD: Usuario tiene roles asignados, acceso directo a ${role}`);
+      
+      // Redirigir directamente según el rol seleccionado
+      if (role === 'asesor' || role === 'revisor') {
+        router.push('/docente'); // Both asesor and revisor use the docente portal
+      } else if (role === 'tesista') {
+        router.push('/tesista');
+      } else {
+        router.push(`/${role}`);
+      }
       return;
     }
 
-    // Para otros roles (asesor, revisor, coordinador)
-    console.log(`🔄 DASHBOARD: Guardando rol seleccionado: ${role}`);
-    try {
-      await supabase.rpc('complete_first_time_setup', {
-        p_selected_role: role
-      });
-      
-      console.log(`✅ DASHBOARD: Rol ${role} guardado, redirigiendo`);
-      
-      // Redirect based on role
-      if (role === 'asesor' || role === 'revisor') {
-        router.push('/docente'); // Both asesor and revisor use the docente portal
-      } else {
-        router.push(`/${role}`);
-      }
-    } catch (error) {
-      console.error(`❌ DASHBOARD: Error guardando rol ${role}:`, error);
-      console.log(`🔄 DASHBOARD: Redirigiendo a ${role} sin guardar rol`);
-      
-      // Redirect based on role
-      if (role === 'asesor' || role === 'revisor') {
-        router.push('/docente'); // Both asesor and revisor use the docente portal
-      } else {
-        router.push(`/${role}`);
-      }
-    }
   };
 
-  const handleLogout = async () => {
-    await supabase.auth.signOut();
-    router.push('/');
-  };
 
   if (loading) {
     return (
@@ -595,44 +548,16 @@ export default function Dashboard() {
             </Card>
           </div>
 
-          {/* No roles available message */}
-          {user && !user.is_student && !user.is_advisor && !user.is_reviewer && !user.is_coordinator && (
-            <div className="mt-8 text-center">
-              <Card className="bg-white/80 backdrop-blur-sm border-red-100 max-w-md mx-auto">
-                <CardHeader>
-                  <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                    <svg className="w-8 h-8 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.732-.833-2.5 0L4.232 15.5c-.77.833.192 2.5 1.732 2.5z" />
-                    </svg>
-                  </div>
-                  <CardTitle className="text-xl text-red-800">Sin Roles Asignados</CardTitle>
-                  <CardDescription className="text-sm text-red-600">
-                    No tienes permisos para acceder a ningún rol del sistema
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <p className="text-red-700 mb-4">
-                    Contacta al administrador del sistema para que te asigne los roles necesarios.
-                  </p>
-                  <button
-                    onClick={() => supabase.auth.signOut()}
-                    className="w-full px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors"
-                  >
-                    Cerrar Sesión
-                  </button>
-                </CardContent>
-              </Card>
-            </div>
-          )}
         </div>
       </main>
 
-      {/* First Time Setup Modal */}
-      <FirstTimeSetupModal 
-        isOpen={showSetupModal}
-        onComplete={handleCompleteSetup}
-        loading={setupLoading}
-      />
+      {/* Perfil Component */}
+      {showSetupModal && (
+        <PerfilComponent 
+          onComplete={handleCompleteSetup}
+          loading={setupLoading}
+        />
+      )}
     </div>
   );
 }

@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { GoogleIcon, MicrosoftIcon } from "@/components/ui/icons";
-import { supabase, signInWithProvider, signInWithEmail, signUpWithEmail } from "@/lib/supabase";
+import { supabase, signInWithProvider, signInWithEmail, signUpWithEmail, resendEmailConfirmation, sendPasswordResetEmail } from "@/lib/supabase";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -62,22 +62,35 @@ export default function Home() {
       });
       
       if (session) {
-        console.log('✅ HOME: Sesión encontrada, redirigiendo al dashboard');
-        router.push('/dashboard');
+        console.log('✅ HOME: Sesión encontrada, verificando estado del email');
+        
+        // Verificar si el email está confirmado
+        if (!session.user.email_confirmed_at) {
+          console.log('⚠️ HOME: Email no verificado, mostrando pantalla de verificación');
+          setPendingEmail(session.user.email || "");
+          setShowEmailVerification(true);
+        } else {
+          console.log('✅ HOME: Email verificado, redirigiendo al dashboard');
+          router.push('/dashboard');
+        }
       } else {
         console.log('ℹ️ HOME: No hay sesión activa, mostrando página de login');
       }
     };
     
     checkExistingSession();
-  }, []);
+  }, [router]);
   const [loading, setLoading] = useState<string | null>(null);
+  const [showEmailVerification, setShowEmailVerification] = useState(false);
+  const [pendingEmail, setPendingEmail] = useState("");
+  const [showPasswordReset, setShowPasswordReset] = useState(false);
+  const [resetEmail, setResetEmail] = useState("");
+  const [resetStep, setResetStep] = useState<'email' | 'sent'>('email');
   const [loginData, setLoginData] = useState({ email: "", password: "" });
   const [registerData, setRegisterData] = useState({
     firstName: "",
     lastName: "",
     email: "",
-    studentId: "",
     password: "",
     confirmPassword: ""
   });
@@ -134,20 +147,25 @@ export default function Home() {
     
     setLoading("register");
     try {
-      const { error } = await signUpWithEmail(
+      const { data, error } = await signUpWithEmail(
         registerData.email, 
         registerData.password,
         {
           first_name: registerData.firstName,
-          last_name: registerData.lastName,
-          student_id: registerData.studentId
+          last_name: registerData.lastName
         }
       );
       if (error) {
         alert(`Error: ${error.message}`);
       } else {
-        alert("¡Registro exitoso! Revisa tu email para confirmar tu cuenta.");
-        router.push('/dashboard');
+        // Si el usuario necesita verificar su email
+        if (data.user && !data.user.email_confirmed_at) {
+          setPendingEmail(registerData.email);
+          setShowEmailVerification(true);
+        } else {
+          // Si el email ya está verificado (OAuth), redirigir al dashboard
+          router.push('/dashboard');
+        }
       }
     } catch (err) {
       alert("Error al registrarse");
@@ -155,6 +173,271 @@ export default function Home() {
       setLoading(null);
     }
   };
+
+  const handleResendEmail = async () => {
+    setLoading("resend");
+    try {
+      const { error } = await resendEmailConfirmation(pendingEmail);
+      if (error) {
+        alert(`Error: ${error.message}`);
+      } else {
+        alert("Email de verificación reenviado. Revisa tu bandeja de entrada.");
+      }
+    } catch (err) {
+      alert("Error al reenviar el email");
+    } finally {
+      setLoading(null);
+    }
+  };
+
+  const handleCloseVerification = () => {
+    setShowEmailVerification(false);
+    setPendingEmail("");
+  };
+
+  const handleForgotPassword = () => {
+    setShowPasswordReset(true);
+    setResetStep('email');
+    setResetEmail("");
+  };
+
+  const handleSendPasswordReset = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading("password-reset");
+    try {
+      const { error } = await sendPasswordResetEmail(resetEmail);
+      if (error) {
+        alert(`Error: ${error.message}`);
+      } else {
+        setResetStep('sent');
+        alert("Enlace de recuperación enviado. Revisa tu correo electrónico.");
+      }
+    } catch (err) {
+      alert("Error al enviar el enlace de recuperación");
+    } finally {
+      setLoading(null);
+    }
+  };
+
+  const handleClosePasswordReset = () => {
+    setShowPasswordReset(false);
+    setResetEmail("");
+    setResetStep('email');
+  };
+
+  // Si se debe mostrar la pantalla de verificación de email
+  if (showEmailVerification) {
+    return (
+      <div className={`${geistSans.variable} ${geistMono.variable} min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50`}>
+        {/* Header */}
+        <header className="bg-white/80 backdrop-blur-sm border-b border-blue-100 sticky top-0 z-50">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="flex justify-between items-center h-14">
+              <div className="flex items-center space-x-4">
+                <div className="w-8 h-8 bg-gradient-to-br from-blue-600 to-indigo-700 rounded-lg flex items-center justify-center">
+                  <span className="text-white font-bold text-sm">U</span>
+                </div>
+                <div>
+                  <h1 className="text-lg font-bold text-gray-900">Universidad San Martín</h1>
+                  <p className="text-[10px] text-gray-600 leading-none">Portal Académico</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </header>
+
+        {/* Main Content - Email Verification */}
+        <main className="flex-1 flex items-center justify-center p-4">
+          <Card className="w-full max-w-md bg-white/80 backdrop-blur-sm border-blue-100 shadow-xl">
+            <CardHeader className="text-center">
+              <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <svg className="w-8 h-8 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 4.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                </svg>
+              </div>
+              <CardTitle className="text-xl text-gray-900">Verifica tu correo electrónico</CardTitle>
+              <CardDescription className="text-sm text-gray-600">
+                Hemos enviado un enlace de verificación a:
+                <br />
+                <span className="font-medium text-blue-600">{pendingEmail}</span>
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="text-center text-sm text-gray-600 space-y-2">
+                <p>
+                  Revisa tu bandeja de entrada y haz clic en el enlace de verificación 
+                  para activar tu cuenta.
+                </p>
+                <p className="text-xs text-gray-500">
+                  Si no encuentras el email, revisa tu carpeta de spam.
+                </p>
+              </div>
+              
+              <div className="space-y-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-full h-9 text-xs"
+                  onClick={handleResendEmail}
+                  disabled={loading === 'resend'}
+                >
+                  {loading === 'resend' ? 'Reenviando...' : 'Reenviar email de verificación'}
+                </Button>
+                
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="w-full h-9 text-xs text-gray-500 hover:text-gray-700"
+                  onClick={handleCloseVerification}
+                >
+                  Volver al inicio de sesión
+                </Button>
+              </div>
+
+              <div className="text-center">
+                <p className="text-xs text-gray-500">
+                  Una vez verificado, podrás acceder a tu cuenta y al portal estudiantil.
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+        </main>
+      </div>
+    );
+  }
+
+  // Si se debe mostrar la pantalla de recuperación de contraseña
+  if (showPasswordReset) {
+    return (
+      <div className={`${geistSans.variable} ${geistMono.variable} min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50`}>
+        {/* Header */}
+        <header className="bg-white/80 backdrop-blur-sm border-b border-blue-100 sticky top-0 z-50">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="flex justify-between items-center h-14">
+              <div className="flex items-center space-x-4">
+                <div className="w-8 h-8 bg-gradient-to-br from-blue-600 to-indigo-700 rounded-lg flex items-center justify-center">
+                  <span className="text-white font-bold text-sm">U</span>
+                </div>
+                <div>
+                  <h1 className="text-lg font-bold text-gray-900">Universidad San Martín</h1>
+                  <p className="text-[10px] text-gray-600 leading-none">Portal Académico</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </header>
+
+        {/* Main Content - Password Reset */}
+        <main className="flex-1 flex items-center justify-center p-4">
+          <Card className="w-full max-w-md bg-white/80 backdrop-blur-sm border-blue-100 shadow-xl">
+            {resetStep === 'email' ? (
+              <>
+                <CardHeader className="text-center">
+                  <div className="w-16 h-16 bg-orange-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <svg className="w-8 h-8 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
+                    </svg>
+                  </div>
+                  <CardTitle className="text-xl text-gray-900">Recuperar Contraseña</CardTitle>
+                  <CardDescription className="text-sm text-gray-600">
+                    Ingresa tu correo electrónico para recibir un enlace de recuperación
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <form onSubmit={handleSendPasswordReset} className="space-y-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="reset-email" className="text-sm">Correo Electrónico</Label>
+                      <Input 
+                        id="reset-email" 
+                        type="email" 
+                        placeholder="tu-correo@ejemplo.com"
+                        className="h-9 text-xs"
+                        value={resetEmail}
+                        onChange={(e) => setResetEmail(e.target.value)}
+                        required
+                      />
+                    </div>
+                    
+                    <div className="space-y-2">
+                      <Button
+                        type="submit"
+                        className="w-full h-9 text-xs bg-gradient-to-r from-orange-600 to-red-600 hover:from-orange-700 hover:to-red-700"
+                        disabled={loading === 'password-reset'}
+                      >
+                        {loading === 'password-reset' ? 'Enviando...' : 'Enviar enlace de recuperación'}
+                      </Button>
+                      
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        className="w-full h-9 text-xs text-gray-500 hover:text-gray-700"
+                        onClick={handleClosePasswordReset}
+                      >
+                        Volver al inicio de sesión
+                      </Button>
+                    </div>
+                  </form>
+                </CardContent>
+              </>
+            ) : (
+              <>
+                <CardHeader className="text-center">
+                  <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <svg className="w-8 h-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 4.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                    </svg>
+                  </div>
+                  <CardTitle className="text-xl text-gray-900">Enlace Enviado</CardTitle>
+                  <CardDescription className="text-sm text-gray-600">
+                    Hemos enviado un enlace de recuperación a:
+                    <br />
+                    <span className="font-medium text-blue-600">{resetEmail}</span>
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="text-center text-sm text-gray-600 space-y-2">
+                    <p>
+                      Revisa tu bandeja de entrada y haz clic en el enlace de recuperación 
+                      para restablecer tu contraseña.
+                    </p>
+                    <p className="text-xs text-gray-500">
+                      Si no encuentras el email, revisa tu carpeta de spam.
+                    </p>
+                  </div>
+                  
+                  <div className="space-y-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="w-full h-9 text-xs"
+                      onClick={() => setResetStep('email')}
+                    >
+                      Enviar a otro correo
+                    </Button>
+                    
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      className="w-full h-9 text-xs text-gray-500 hover:text-gray-700"
+                      onClick={handleClosePasswordReset}
+                    >
+                      Volver al inicio de sesión
+                    </Button>
+                  </div>
+
+                  <div className="text-center">
+                    <p className="text-xs text-gray-500">
+                      El enlace expirará en 24 horas por seguridad.
+                    </p>
+                  </div>
+                </CardContent>
+              </>
+            )}
+          </Card>
+        </main>
+      </div>
+    );
+  }
 
   return (
     <div className={`${geistSans.variable} ${geistMono.variable} min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50`}>
@@ -323,9 +606,13 @@ export default function Home() {
                               Recordarme
                             </label>
                           </div>
-                          <a href="#" className="text-[10px] text-blue-600 hover:underline">
+                          <button 
+                            type="button"
+                            onClick={handleForgotPassword}
+                            className="text-[10px] text-blue-600 hover:underline"
+                          >
                             ¿Olvidaste tu contraseña?
-                          </a>
+                          </button>
                         </div>
                         <Button 
                           type="submit"
@@ -375,17 +662,6 @@ export default function Home() {
                             value={registerData.email}
                             onChange={(e) => setRegisterData({...registerData, email: e.target.value})}
                             required
-                          />
-                        </div>
-                        <div className="space-y-1">
-                          <Label htmlFor="student-id" className="text-xs">Código Estudiantil</Label>
-                          <Input 
-                            id="student-id" 
-                            type="text" 
-                            placeholder="202X-XXXX"
-                            className="h-9 text-xs"
-                            value={registerData.studentId}
-                            onChange={(e) => setRegisterData({...registerData, studentId: e.target.value})}
                           />
                         </div>
                         <div className="space-y-1">
