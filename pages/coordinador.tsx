@@ -57,7 +57,6 @@ export default function Coordinador() {
       <Header 
         title="Portal del Coordinador" 
         subtitle="Administración del Programa de Tesis"
-        showBackToDashboard={true}
       />
 
       {/* Main Content */}

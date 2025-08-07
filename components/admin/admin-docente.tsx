@@ -169,22 +169,22 @@ export default function AdminDocente({ activeSidebarItem, setActiveSidebarItem }
 
   // Render sidebar
   const renderSidebar = () => (
-    <div className="w-72 bg-white border-r border-gray-200 flex-shrink-0">
-      <div className="p-4">
-        <nav className="space-y-2">
+    <div className="w-64 bg-white border-r border-gray-200 flex-shrink-0">
+      <div className="p-2">
+        <nav className="space-y-1">
           {sidebarItems.map((item) => {
             const IconComponent = item.icon;
             return (
               <button
                 key={item.id}
                 onClick={() => setActiveSidebarItem(item.id)}
-                className={`w-full flex items-center px-3 py-2 text-base font-medium rounded-lg transition-colors ${
+                className={`w-full flex items-center px-2 py-1.5 text-sm font-medium rounded-lg transition-colors ${
                   activeSidebarItem === item.id
                     ? 'bg-[#002d7a] text-white'
-                    : 'text-gray-600 hover:bg-[#0039A6] hover:text-white'
+                    : 'text-black hover:bg-[#0039A6] hover:text-white'
                 }`}
               >
-                <IconComponent className="mr-3 h-5 w-5 flex-shrink-0" />
+                <IconComponent className="mr-2 h-4 w-4 flex-shrink-0" />
                 {item.label}
               </button>
             );

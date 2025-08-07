@@ -4,7 +4,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import { supabase } from "@/lib/supabase";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
-import ProyTesis from "@/components/ProyTesis";
+import ProyTesis from "@/components/tesista/ProyTesis";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { 
   Home,
@@ -38,6 +38,30 @@ interface User {
   student_id: string;
 }
 
+interface ThesisProject {
+  id: string;
+  titulo: string;
+  estado: string;
+  created_at: string;
+  archivo_nombre: string;
+  archivo_url: string;
+  fecha_carga: string;
+}
+
+interface ThesisLog {
+  id: string;
+  step_number: number;
+  estado_anterior: string;
+  estado_nuevo: string;
+  accion: string;
+  descripcion: string;
+  actor_nombre: string;
+  actor_tipo: string;
+  observaciones: string;
+  fecha_accion: string;
+  is_milestone: boolean;
+}
+
 interface Profesor {
   id: string;
   full_name: string;
@@ -52,6 +76,21 @@ interface LineaInvestigacion {
   responsable: Profesor;
 }
 
+// Mapeo de estados de BD a pasos del timeline
+const STEP_MAPPING = {
+  1: ['sin_proyecto'], // Sin proyecto cargado
+  2: ['cargado', 'revision_formato'], // Proyecto cargado
+  3: ['aprobado_formato', 'en_revision_director'], // Director revisa
+  4: ['aprobado_director', 'listo_sorteo'], // Listo para sorteo
+  5: ['en_revision_jurados'], // Revisión de jurados
+  6: ['con_observaciones'], // Subir correcciones
+  7: ['dictamen_pendiente', 'aprobado'], // Proyecto aprobado
+  8: ['documentos_pendientes'], // Subir documentos
+  9: ['validacion_coordinacion'], // Validación coordinación
+  10: ['borrador_en_revision'], // Borrador en revisión
+  11: ['proceso_finalizado'] // Proceso finalizado
+};
+
 export default function Tesista() {
   const router = useRouter();
   const [user, setUser] = useState<User | null>(null);
@@ -60,6 +99,10 @@ export default function Tesista() {
   const [isProyTesisModalOpen, setIsProyTesisModalOpen] = useState(false);
   const [lineasInvestigacion, setLineasInvestigacion] = useState<LineaInvestigacion[]>([]);
   const [expandedLinea, setExpandedLinea] = useState<string | null>(null);
+  const [userThesisProject, setUserThesisProject] = useState<ThesisProject | null>(null);
+  const [currentStep, setCurrentStep] = useState(1);
+  const [thesisLogs, setThesisLogs] = useState<ThesisLog[]>([]);
+  const [loadingLogs, setLoadingLogs] = useState(false);
 
   useEffect(() => {
     checkAuth();
@@ -68,8 +111,111 @@ export default function Tesista() {
   useEffect(() => {
     if (user) {
       loadLineasInvestigacion();
+      loadUserThesisProject();
     }
   }, [user]);
+
+  // Función para cargar el proyecto de tesis del usuario
+  const loadUserThesisProject = async () => {
+    if (!user) return;
+
+    try {
+      const { data, error } = await supabase
+        .from('thesis_projects')
+        .select('id, titulo, estado, created_at, archivo_nombre, archivo_url, fecha_carga')
+        .or(`estudiante_principal_id.eq.${user.id},estudiante_secundario_id.eq.${user.id}`)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .single();
+
+      if (error && error.code !== 'PGRST116') {
+        console.error('Error cargando proyecto:', error);
+        return;
+      }
+
+      if (data) {
+        setUserThesisProject(data);
+        setCurrentStep(getStepFromState(data.estado));
+        // Cargar logs del proyecto
+        loadThesisLogs(data.id);
+      } else {
+        setUserThesisProject(null);
+        setCurrentStep(1); // Sin proyecto
+        setThesisLogs([]); // Limpiar logs
+      }
+    } catch (err) {
+      console.error('Error:', err);
+    }
+  };
+
+  // Función para cargar los logs de trámites del proyecto
+  const loadThesisLogs = async (projectId: string) => {
+    setLoadingLogs(true);
+    try {
+      const { data, error } = await supabase
+        .from('tram_thesis_log')
+        .select(`
+          id,
+          step_number,
+          estado_anterior,
+          estado_nuevo,
+          accion,
+          descripcion,
+          actor_nombre,
+          actor_tipo,
+          observaciones,
+          fecha_accion,
+          is_milestone
+        `)
+        .eq('thesis_project_id', projectId)
+        .eq('is_active', true)
+        .order('fecha_accion', { ascending: false });
+
+      if (error) {
+        console.error('Error cargando logs:', error);
+        return;
+      }
+
+      setThesisLogs(data || []);
+    } catch (err) {
+      console.error('Error:', err);
+    } finally {
+      setLoadingLogs(false);
+    }
+  };
+
+  // Función para determinar el paso actual según el estado
+  const getStepFromState = (estado: string): number => {
+    for (const [step, states] of Object.entries(STEP_MAPPING)) {
+      if (states.includes(estado)) {
+        return parseInt(step);
+      }
+    }
+    return 1; // Default al paso 1
+  };
+
+  // Función para determinar si un paso está desbloqueado
+  const isStepUnlocked = (step: number): boolean => {
+    return step <= currentStep;
+  };
+
+  // Función para obtener estilos del paso
+  const getStepStyles = (step: number) => {
+    const isUnlocked = isStepUnlocked(step);
+    const isCurrent = step === currentStep;
+    
+    return {
+      container: `relative flex items-start mb-8 transition-all duration-300 ${
+        isUnlocked ? 'opacity-100' : 'opacity-30'
+      }`,
+      circle: `flex-shrink-0 w-16 h-16 text-white rounded-full flex items-center justify-center font-bold text-lg z-10 ${
+        isCurrent ? 'ring-4 ring-blue-300 ring-opacity-50 scale-110' : ''
+      } transition-all duration-300`,
+      content: `ml-6 bg-white p-4 rounded-lg flex-1 transition-all duration-300 ${
+        isCurrent ? 'shadow-lg border-2 border-blue-300' : 'shadow-sm'
+      }`
+    };
+  };
 
   const checkAuth = async () => {
     console.log('🔐 TESISTA: Iniciando verificación de autenticación');
@@ -375,16 +521,17 @@ export default function Tesista() {
             {/* Tab Contents */}
             <div className="bg-white min-h-[600px]">
               <TabsContent value="inicio" className="py-8 px-0">
-                <div className="mx-auto px-8 w-full max-w-4xl">                  
+                <div className="mx-auto px-8 w-full max-w-4xl">
+                  
                   {/* Timeline */}
                   <div className="relative">
                     {/* Línea vertical del timeline */}
                     <div className="absolute left-8 top-0 bottom-0 w-0.5 bg-blue-200"></div>
                     
                     {/* Paso 1 */}
-                    <div className="relative flex items-start mb-8">
-                      <div className="flex-shrink-0 w-16 h-16 bg-blue-400 text-white rounded-full flex items-center justify-center font-bold text-lg z-10">1</div>
-                      <div className="ml-6 bg-white p-4 rounded-lg flex-1 border-l-4 border-blue-400">
+                    <div className={getStepStyles(1).container}>
+                      <div className={`${getStepStyles(1).circle} bg-blue-400`}>1</div>
+                      <div className={`${getStepStyles(1).content} border-l-4 border-blue-400`}>
                         <div className="flex items-start justify-between">
                           {/* Contenido izquierdo */}
                           <div className="flex-1 pr-4">
@@ -397,12 +544,97 @@ export default function Tesista() {
                           
                           {/* Columna de acción derecha */}
                           <div className="flex-shrink-0 flex flex-col items-center justify-center min-w-[200px]">
-                            <button 
-                              onClick={() => setIsProyTesisModalOpen(true)}
-                              className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 shadow-md hover:shadow-lg"
-                            >
-                              Subir mi Proyecto de Tesis
-                            </button>
+                            {userThesisProject ? (
+                              // Mostrar información del proyecto cargado
+                              <div className="bg-green-50 border border-green-200 rounded-lg p-4 w-full max-w-[250px]">
+                                <div className="text-center mb-3">
+                                  <div className="inline-flex items-center bg-green-100 text-green-800 px-3 py-1 rounded-full text-xs font-medium mb-2">
+                                    ✓ Proyecto Cargado
+                                  </div>
+                                </div>
+                                
+                                <div className="space-y-2">
+                                  <div>
+                                    <p className="text-xs text-gray-600 font-medium mb-1">Título:</p>
+                                    <p 
+                                      className="text-sm font-semibold text-gray-900 leading-tight cursor-help overflow-hidden"
+                                      title={userThesisProject.titulo}
+                                      style={{
+                                        display: '-webkit-box',
+                                        WebkitLineClamp: 2,
+                                        WebkitBoxOrient: 'vertical' as const,
+                                        maxHeight: '2.5em'
+                                      }}
+                                    >
+                                      {userThesisProject.titulo}
+                                    </p>
+                                  </div>
+                                  
+                                  <div>
+                                    <p className="text-xs text-gray-600 font-medium mb-1">Fecha de subida:</p>
+                                    <p className="text-sm text-gray-800">
+                                      {new Date(userThesisProject.fecha_carga || userThesisProject.created_at).toLocaleDateString('es-PE', {
+                                        year: 'numeric',
+                                        month: 'short',
+                                        day: '2-digit'
+                                      })}
+                                    </p>
+                                  </div>
+                                  
+                                  {userThesisProject.archivo_url ? (
+                                    <div className="pt-2">
+                                      <a 
+                                        href={userThesisProject.archivo_url}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="inline-flex items-center justify-center w-full px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium rounded-md transition-colors duration-200 shadow-sm hover:shadow-md"
+                                        onClick={(e) => {
+                                          // Verificar que la URL sea válida
+                                          if (!userThesisProject.archivo_url || userThesisProject.archivo_url.trim() === '') {
+                                            e.preventDefault();
+                                            alert('Archivo no disponible para descarga');
+                                          }
+                                        }}
+                                      >
+                                        <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                        </svg>
+                                        Descargar PDF
+                                      </a>
+                                      {userThesisProject.archivo_nombre && (
+                                        <p className="text-xs text-gray-500 mt-1 truncate" title={userThesisProject.archivo_nombre}>
+                                          {userThesisProject.archivo_nombre}
+                                        </p>
+                                      )}
+                                    </div>
+                                  ) : (
+                                    <div className="pt-2">
+                                      <div className="inline-flex items-center justify-center w-full px-3 py-2 bg-gray-300 text-gray-500 text-xs font-medium rounded-md cursor-not-allowed">
+                                        <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z" />
+                                        </svg>
+                                        Archivo no disponible
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            ) : (
+                              // Mostrar botón para subir proyecto
+                              <>
+                                <button 
+                                  onClick={() => setIsProyTesisModalOpen(true)}
+                                  disabled={!isStepUnlocked(1)}
+                                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 shadow-md hover:shadow-lg ${
+                                    !isStepUnlocked(1)
+                                      ? 'bg-gray-400 text-gray-600 cursor-not-allowed' 
+                                      : 'bg-blue-600 hover:bg-blue-700 text-white'
+                                  }`}
+                                >
+                                  Subir mi Proyecto de Tesis
+                                </button>
+                              </>
+                            )}
                             <span className="text-xs text-gray-500 mt-2 text-center">Paso 1 - Proceso</span>
                           </div>
                         </div>
@@ -410,9 +642,9 @@ export default function Tesista() {
                     </div>
 
                     {/* Paso 2 */}
-                    <div className="relative flex items-start mb-8">
-                      <div className="flex-shrink-0 w-16 h-16 bg-green-400 text-white rounded-full flex items-center justify-center font-bold text-lg z-10">2</div>
-                      <div className="ml-6 bg-white p-4 rounded-lg flex-1 border-l-4 border-green-400">
+                    <div className={getStepStyles(2).container}>
+                      <div className={`${getStepStyles(2).circle} bg-green-400`}>2</div>
+                      <div className={`${getStepStyles(2).content} border-l-4 border-green-400`}>
                         <div className="flex items-start justify-between">
                           {/* Contenido izquierdo */}
                           <div className="flex-1 pr-4">
@@ -436,9 +668,9 @@ export default function Tesista() {
                     </div>
 
                     {/* Paso 3 */}
-                    <div className="relative flex items-start mb-8">
-                      <div className="flex-shrink-0 w-16 h-16 bg-yellow-400 text-white rounded-full flex items-center justify-center font-bold text-lg z-10">3</div>
-                      <div className="ml-6 bg-white p-4 rounded-lg flex-1 border-l-4 border-yellow-400">
+                    <div className={getStepStyles(3).container}>
+                      <div className={`${getStepStyles(3).circle} bg-yellow-400`}>3</div>
+                      <div className={`${getStepStyles(3).content} border-l-4 border-yellow-400`}>
                         <div className="flex items-start justify-between">
                           {/* Contenido izquierdo */}
                           <div className="flex-1 pr-4">
@@ -462,9 +694,9 @@ export default function Tesista() {
                     </div>
 
                     {/* Paso 4 */}
-                    <div className="relative flex items-start mb-8">
-                      <div className="flex-shrink-0 w-16 h-16 bg-orange-400 text-white rounded-full flex items-center justify-center font-bold text-lg z-10">4</div>
-                      <div className="ml-6 bg-white p-4 rounded-lg flex-1 border-l-4 border-orange-400">
+                    <div className={getStepStyles(4).container}>
+                      <div className={`${getStepStyles(4).circle} bg-orange-400`}>4</div>
+                      <div className={`${getStepStyles(4).content} border-l-4 border-orange-400`}>
                         <div className="flex items-start justify-between">
                           {/* Contenido izquierdo */}
                           <div className="flex-1 pr-4">
@@ -488,9 +720,9 @@ export default function Tesista() {
                     </div>
 
                     {/* Paso 5 */}
-                    <div className="relative flex items-start mb-8">
-                      <div className="flex-shrink-0 w-16 h-16 bg-purple-400 text-white rounded-full flex items-center justify-center font-bold text-lg z-10">5</div>
-                      <div className="ml-6 bg-white p-4 rounded-lg flex-1 border-l-4 border-purple-400">
+                    <div className={getStepStyles(5).container}>
+                      <div className={`${getStepStyles(5).circle} bg-purple-400`}>5</div>
+                      <div className={`${getStepStyles(5).content} border-l-4 border-purple-400`}>
                         <div className="flex items-start justify-between">
                           {/* Contenido izquierdo */}
                           <div className="flex-1 pr-4">
@@ -514,9 +746,9 @@ export default function Tesista() {
                     </div>
 
                     {/* Paso 6 */}
-                    <div className="relative flex items-start mb-8">
-                      <div className="flex-shrink-0 w-16 h-16 bg-green-400 text-white rounded-full flex items-center justify-center font-bold text-lg z-10">6</div>
-                      <div className="ml-6 bg-white p-4 rounded-lg flex-1 border-l-4 border-green-400">
+                    <div className={getStepStyles(6).container}>
+                      <div className={`${getStepStyles(6).circle} bg-green-400`}>6</div>
+                      <div className={`${getStepStyles(6).content} border-l-4 border-green-400`}>
                         <div className="flex items-start justify-between">
                           {/* Contenido izquierdo */}
                           <div className="flex-1 pr-4">
@@ -540,9 +772,9 @@ export default function Tesista() {
                     </div>
 
                     {/* Paso 7 */}
-                    <div className="relative flex items-start mb-8">
-                      <div className="flex-shrink-0 w-16 h-16 bg-indigo-400 text-white rounded-full flex items-center justify-center font-bold text-lg z-10">7</div>
-                      <div className="ml-6 bg-white p-4 rounded-lg flex-1 border-l-4 border-indigo-400">
+                    <div className={getStepStyles(7).container}>
+                      <div className={`${getStepStyles(7).circle} bg-indigo-400`}>7</div>
+                      <div className={`${getStepStyles(7).content} border-l-4 border-indigo-400`}>
                         <div className="flex items-start justify-between">
                           {/* Contenido izquierdo */}
                           <div className="flex-1 pr-4">
@@ -572,9 +804,9 @@ export default function Tesista() {
                     </div>
 
                     {/* Paso 8 */}
-                    <div className="relative flex items-start mb-8">
-                      <div className="flex-shrink-0 w-16 h-16 bg-cyan-400 text-white rounded-full flex items-center justify-center font-bold text-lg z-10">8</div>
-                      <div className="ml-6 bg-white p-4 rounded-lg flex-1 border-l-4 border-cyan-400">
+                    <div className={getStepStyles(8).container}>
+                      <div className={`${getStepStyles(8).circle} bg-cyan-400`}>8</div>
+                      <div className={`${getStepStyles(8).content} border-l-4 border-cyan-400`}>
                         <div className="flex items-start justify-between">
                           {/* Contenido izquierdo */}
                           <div className="flex-1 pr-4">
@@ -598,9 +830,9 @@ export default function Tesista() {
                     </div>
 
                     {/* Paso 9 */}
-                    <div className="relative flex items-start mb-8">
-                      <div className="flex-shrink-0 w-16 h-16 bg-rose-400 text-white rounded-full flex items-center justify-center font-bold text-lg z-10">9</div>
-                      <div className="ml-6 bg-white p-4 rounded-lg flex-1 border-l-4 border-rose-400">
+                    <div className={getStepStyles(9).container}>
+                      <div className={`${getStepStyles(9).circle} bg-rose-400`}>9</div>
+                      <div className={`${getStepStyles(9).content} border-l-4 border-rose-400`}>
                         <div className="flex items-start justify-between">
                           {/* Contenido izquierdo */}
                           <div className="flex-1 pr-4">
@@ -624,9 +856,9 @@ export default function Tesista() {
                     </div>
 
                     {/* Paso 10 */}
-                    <div className="relative flex items-start mb-8">
-                      <div className="flex-shrink-0 w-16 h-16 bg-teal-400 text-white rounded-full flex items-center justify-center font-bold text-lg z-10">10</div>
-                      <div className="ml-6 bg-white p-4 rounded-lg flex-1 border-l-4 border-teal-400">
+                    <div className={getStepStyles(10).container}>
+                      <div className={`${getStepStyles(10).circle} bg-teal-400`}>10</div>
+                      <div className={`${getStepStyles(10).content} border-l-4 border-teal-400`}>
                         <div className="flex items-start justify-between">
                           {/* Contenido izquierdo */}
                           <div className="flex-1 pr-4">
@@ -657,9 +889,9 @@ export default function Tesista() {
                     </div>
 
                     {/* Paso 11 */}
-                    <div className="relative flex items-start mb-8">
-                      <div className="flex-shrink-0 w-16 h-16 bg-green-500 text-white rounded-full flex items-center justify-center font-bold text-lg z-10">11</div>
-                      <div className="ml-6 bg-white p-4 rounded-lg flex-1 border-l-4 border-green-500">
+                    <div className={getStepStyles(11).container}>
+                      <div className={`${getStepStyles(11).circle} bg-green-500`}>11</div>
+                      <div className={`${getStepStyles(11).content} border-l-4 border-green-500`}>
                         <div className="flex items-start justify-between">
                           {/* Contenido izquierdo */}
                           <div className="flex-1 pr-4">
@@ -682,6 +914,116 @@ export default function Tesista() {
                       </div>
                     </div>
                   </div>
+                  
+                  {/* Historial de Trámites */}
+                  {userThesisProject && thesisLogs.length > 0 && (
+                    <div className="mt-12 bg-white rounded-lg shadow-lg border border-gray-200">
+                      <div className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white p-6 rounded-t-lg">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <h3 className="text-xl font-bold mb-2">Historial de Trámites</h3>
+                            <p className="text-blue-100">
+                              Seguimiento detallado de tu proceso de tesis
+                            </p>
+                          </div>
+                          <div className="text-right">
+                            <div className="bg-white bg-opacity-20 px-4 py-2 rounded-lg">
+                              <span className="text-sm font-medium">{thesisLogs.length} eventos</span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                      
+                      <div className="p-6">
+                        {loadingLogs ? (
+                          <div className="text-center py-8">
+                            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
+                            <p className="text-gray-500 mt-4">Cargando historial...</p>
+                          </div>
+                        ) : (
+                          <div className="space-y-4">
+                            {thesisLogs.map((log, index) => (
+                              <div 
+                                key={log.id} 
+                                className={`border-l-4 pl-6 py-4 ${
+                                  log.is_milestone 
+                                    ? 'border-yellow-400 bg-yellow-50' 
+                                    : 'border-gray-300 bg-gray-50'
+                                } rounded-r-lg transition-all duration-200 hover:shadow-md`}
+                              >
+                                <div className="flex items-start justify-between mb-3">
+                                  <div className="flex-1">
+                                    <div className="flex items-center gap-3 mb-2">
+                                      {log.is_milestone && (
+                                        <span className="bg-yellow-100 text-yellow-800 text-xs font-medium px-2 py-1 rounded-full">
+                                          ⭐ Hito
+                                        </span>
+                                      )}
+                                      <span className="bg-blue-100 text-blue-800 text-xs font-medium px-2 py-1 rounded-full">
+                                        Paso {log.step_number}
+                                      </span>
+                                      <span className="text-xs text-gray-500">
+                                        {new Date(log.fecha_accion).toLocaleString('es-PE', {
+                                          year: 'numeric',
+                                          month: 'short',
+                                          day: '2-digit',
+                                          hour: '2-digit',
+                                          minute: '2-digit'
+                                        })}
+                                      </span>
+                                    </div>
+                                    
+                                    <h4 className="font-semibold text-gray-900 mb-1">
+                                      {log.accion}
+                                    </h4>
+                                    
+                                    {log.descripcion && (
+                                      <p className="text-sm text-gray-600 mb-2">
+                                        {log.descripcion}
+                                      </p>
+                                    )}
+                                    
+                                    {log.observaciones && (
+                                      <div className="text-xs text-gray-500 bg-gray-100 p-2 rounded mt-2">
+                                        <strong>Observaciones:</strong> {log.observaciones}
+                                      </div>
+                                    )}
+                                    
+                                    <div className="flex items-center gap-2 mt-2">
+                                      {log.estado_anterior && (
+                                        <span className="text-xs bg-red-100 text-red-700 px-2 py-1 rounded">
+                                          De: {log.estado_anterior.replace('_', ' ')}
+                                        </span>
+                                      )}
+                                      <span className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded">
+                                        A: {log.estado_nuevo.replace('_', ' ')}
+                                      </span>
+                                    </div>
+                                  </div>
+                                  
+                                  <div className="text-right flex-shrink-0">
+                                    <div className="bg-white border border-gray-200 rounded-lg p-3">
+                                      <p className="text-xs text-gray-500 mb-1">Realizado por:</p>
+                                      <p className="text-sm font-medium text-gray-900">
+                                        {log.actor_nombre}
+                                      </p>
+                                      <p className="text-xs text-gray-500 capitalize">
+                                        ({log.actor_tipo})
+                                      </p>
+                                    </div>
+                                  </div>
+                                </div>
+                                
+                                {index < thesisLogs.length - 1 && (
+                                  <div className="mt-4 border-b border-gray-200"></div>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
                 </div>
               </TabsContent>
 
@@ -1918,7 +2260,13 @@ export default function Tesista() {
       {user && (
         <ProyTesis 
           isOpen={isProyTesisModalOpen}
-          onClose={() => setIsProyTesisModalOpen(false)}
+          onClose={() => {
+            setIsProyTesisModalOpen(false);
+            // Recargar proyecto del usuario después de cerrar el modal
+            if (user) {
+              loadUserThesisProject();
+            }
+          }}
           currentUser={user}
         />
       )}

@@ -88,10 +88,10 @@ export default function CookiePolicy() {
 
                 <h4 className="font-medium text-slate-900 mb-2">Configuración por Navegador</h4>
                 <ul className="list-disc list-inside text-slate-700 mb-4 space-y-1">
-                  <li><strong>Chrome:</strong> Configuración > Privacidad y seguridad > Cookies</li>
-                  <li><strong>Firefox:</strong> Preferencias > Privacidad y seguridad</li>
-                  <li><strong>Safari:</strong> Preferencias > Privacidad</li>
-                  <li><strong>Edge:</strong> Configuración > Cookies y permisos del sitio</li>
+                  <li><strong>Chrome:</strong> Configuración {'>'}  Privacidad y seguridad {'>'} Cookies</li>
+                  <li><strong>Firefox:</strong> Preferencias {'>'} Privacidad y seguridad</li>
+                  <li><strong>Safari:</strong> Preferencias {'>'} Privacidad</li>
+                  <li><strong>Edge:</strong> Configuración {'>'} Cookies y permisos del sitio</li>
                 </ul>
 
                 <h3 className="text-lg font-medium text-slate-900 mb-3">Cookies de Terceros</h3>

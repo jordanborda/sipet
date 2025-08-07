@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { X, Upload, FileText, Users, User } from 'lucide-react';
+import { supabase } from '@/lib/supabase';
 
 interface Student {
   id: string;
@@ -34,19 +35,33 @@ export default function ProyTesis({ isOpen, onClose, currentUser }: ProyTesisPro
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  // Simulación de líneas de investigación (reemplazar con llamada a API)
+  // Cargar líneas de investigación reales desde Supabase
   useEffect(() => {
     if (isOpen) {
-      // Simulación de datos - reemplazar con llamada real a supabase
-      setLineasInvestigacion([
-        { id: '1', nombre: 'Inteligencia Artificial y Machine Learning', carrera: 'Ingeniería de Sistemas' },
-        { id: '2', nombre: 'Desarrollo Web y Aplicaciones Móviles', carrera: 'Ingeniería de Sistemas' },
-        { id: '3', nombre: 'Ciberseguridad y Redes', carrera: 'Ingeniería de Sistemas' },
-        { id: '4', nombre: 'Base de Datos y Big Data', carrera: 'Ingeniería de Sistemas' },
-        { id: '5', nombre: 'Realidad Virtual y Aumentada', carrera: 'Ingeniería de Sistemas' }
-      ]);
+      loadLineasInvestigacion();
     }
   }, [isOpen]);
+
+  const loadLineasInvestigacion = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('research_lines')
+        .select('id, nombre, carrera')
+        .eq('is_active', true)
+        .order('nombre');
+
+      if (error) {
+        console.error('Error cargando líneas de investigación:', error);
+        setError('Error al cargar líneas de investigación');
+        return;
+      }
+
+      setLineasInvestigacion(data || []);
+    } catch (err) {
+      console.error('Error:', err);
+      setError('Error al cargar líneas de investigación');
+    }
+  };
 
   const buscarCompanero = async () => {
     if (!codigoCompanero.trim()) return;
@@ -55,29 +70,20 @@ export default function ProyTesis({ isOpen, onClose, currentUser }: ProyTesisPro
     setError('');
     
     try {
-      // Simulación de búsqueda - reemplazar con llamada real a supabase
-      // const { data, error } = await supabase
-      //   .from('users')
-      //   .select('*')
-      //   .eq('codigo_matricula', codigoCompanero)
-      //   .single();
+      const { data, error } = await supabase
+        .from('users')
+        .select('id, codigo_matricula, full_name, first_name, last_name')
+        .eq('codigo_matricula', codigoCompanero)
+        .eq('account_type', 'student')
+        .single();
       
-      // Simulación de resultado
-      setTimeout(() => {
-        if (codigoCompanero === '20190001') {
-          setCompanero({
-            id: '2',
-            codigo_matricula: '20190001',
-            full_name: 'María González López',
-            first_name: 'María',
-            last_name: 'González López'
-          });
-        } else {
-          setError('No se encontró estudiante con ese código de matrícula');
-          setCompanero(null);
-        }
-        setLoading(false);
-      }, 1000);
+      if (error || !data) {
+        setError('No se encontró estudiante con ese código de matrícula');
+        setCompanero(null);
+      } else {
+        setCompanero(data);
+      }
+      setLoading(false);
     } catch (err) {
       setError('Error al buscar compañero');
       setLoading(false);
@@ -114,34 +120,132 @@ export default function ProyTesis({ isOpen, onClose, currentUser }: ProyTesisPro
     setLoading(true);
     
     try {
-      // Aquí iría la lógica para enviar el proyecto a la base de datos
-      console.log('Enviando proyecto:', {
-        tipo: tipoProyecto,
-        estudiantes: tipoProyecto === 'individual' ? [currentUser] : [currentUser, companero],
-        lineaInvestigacion: lineaSeleccionada,
-        archivo: archivo.name,
+      // Subir archivo a Supabase Storage
+      let archivoUrl = null;
+      if (archivo) {
+        const fileName = `${currentUser.id}_${Date.now()}_${archivo.name.replace(/[^a-zA-Z0-9.]/g, '_')}`;
+        const { error: uploadError } = await supabase.storage
+          .from('thesis-documents')
+          .upload(`projects/${fileName}`, archivo);
+
+        if (uploadError) {
+          console.error('Error subiendo archivo:', uploadError);
+          setError('Error al subir el archivo');
+          setLoading(false);
+          return;
+        }
+
+        // Obtener URL pública del archivo
+        const { data: urlData } = supabase.storage
+          .from('thesis-documents')
+          .getPublicUrl(`projects/${fileName}`);
+        
+        archivoUrl = urlData.publicUrl;
+      }
+
+      // Crear registro en thesis_projects
+      const projectData = {
         titulo: tituloProyecto,
-        resumen,
-        palabrasClave
-      });
-      
-      // Simulación de envío
-      setTimeout(() => {
-        alert('Proyecto enviado exitosamente');
-        onClose();
-        // Reset form
-        setTipoProyecto(null);
-        setCodigoCompanero('');
-        setCompanero(null);
-        setLineaSeleccionada('');
-        setArchivo(null);
-        setTituloProyecto('');
-        setResumen('');
-        setPalabrasClave('');
+        resumen: resumen,
+        palabras_clave: palabrasClave,
+        tipo_proyecto: tipoProyecto,
+        research_line_id: lineaSeleccionada,
+        estudiante_principal_id: currentUser.id,
+        estudiante_secundario_id: tipoProyecto === 'grupal' ? companero?.id : null,
+        archivo_nombre: archivo?.name,
+        archivo_url: archivoUrl,
+        archivo_size: archivo?.size,
+        estado: 'cargado'
+      };
+
+      const { data: projectResult, error: projectError } = await supabase
+        .from('thesis_projects')
+        .insert([projectData])
+        .select()
+        .single();
+
+      if (projectError) {
+        console.error('Error creando proyecto:', projectError);
+        setError('Error al crear el proyecto: ' + projectError.message);
         setLoading(false);
-      }, 2000);
+        return;
+      }
+
+      // Si hay archivo, crear registro en project_documents
+      let documentId = null;
+      if (archivo && archivoUrl) {
+        const documentData = {
+          thesis_project_id: projectResult.id,
+          nombre_archivo: archivo.name,
+          nombre_original: archivo.name,
+          tipo_documento: 'proyecto_inicial',
+          url_archivo: archivoUrl,
+          tamano_bytes: archivo.size,
+          tipo_mime: archivo.type,
+          subido_por_id: currentUser.id
+        };
+
+        const { data: docResult, error: docError } = await supabase
+          .from('project_documents')
+          .insert([documentData])
+          .select()
+          .single();
+
+        if (docError) {
+          console.error('Error creando documento:', docError);
+          // No bloqueamos el proceso por error en documento
+        } else {
+          documentId = docResult.id;
+        }
+      }
+
+      // Crear log inicial del trámite
+      const logData = {
+        thesis_project_id: projectResult.id,
+        step_number: 1,
+        estado_anterior: 'sin_proyecto',
+        estado_nuevo: 'cargado',
+        accion: 'Proyecto de tesis cargado',
+        descripcion: `Proyecto "${tituloProyecto}" cargado exitosamente por el tesista`,
+        actor_id: currentUser.id,
+        actor_tipo: 'tesista',
+        actor_nombre: currentUser.full_name,
+        observaciones: `Tipo: ${tipoProyecto}, Línea: ${lineaSeleccionada}, Archivo: ${archivo?.name}`,
+        datos_adicionales: {
+          tipo_proyecto: tipoProyecto,
+          research_line_id: lineaSeleccionada,
+          archivo_nombre: archivo?.name,
+          archivo_size: archivo?.size,
+          palabras_clave: palabrasClave
+        },
+        documento_asociado_id: documentId,
+        is_milestone: true
+      };
+
+      const { error: logError } = await supabase
+        .from('tram_thesis_log')
+        .insert([logData]);
+
+      if (logError) {
+        console.error('Error creando log:', logError);
+        // No bloqueamos el proceso por error en log
+      }
+
+      alert('Proyecto enviado exitosamente');
+      onClose();
+      // Reset form
+      setTipoProyecto(null);
+      setCodigoCompanero('');
+      setCompanero(null);
+      setLineaSeleccionada('');
+      setArchivo(null);
+      setTituloProyecto('');
+      setResumen('');
+      setPalabrasClave('');
+      setLoading(false);
     } catch (err) {
-      setError('Error al enviar el proyecto');
+      console.error('Error general:', err);
+      setError('Error al enviar el proyecto: ' + (err instanceof Error ? err.message : 'Error desconocido'));
       setLoading(false);
     }
   };

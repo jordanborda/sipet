@@ -94,6 +94,45 @@ interface SustentacionFilters {
   codigo: string;
 }
 
+interface SearchedTesista {
+  id: string;
+  dni: string;
+  codigo_matricula: string;
+  email: string;
+  first_name: string | null;
+  last_name: string | null;
+  full_name: string | null;
+  student_id: string | null;
+  major: string | null;
+  phone: string | null;
+  created_at: string;
+  is_active: boolean;
+  proyecto?: {
+    id: string;
+    codigo: string;
+    titulo: string;
+    estado: string;
+    linea_investigacion: string;
+    fecha_inicio_proyecto: string;
+    fecha_inicio_borrador: string;
+    fecha_ultima: string;
+    dias_transcurridos: number;
+    en_ejecucion: boolean;
+  };
+}
+
+interface TramiteLog {
+  id: string;
+  tesista_id: string;
+  proyecto_id: string;
+  estado_anterior: string;
+  estado_nuevo: string;
+  descripcion: string;
+  fecha_cambio: string;
+  usuario_id: string;
+  usuario_nombre: string;
+}
+
 interface RechazadoTesis {
   id: string;
   codigo: string;
@@ -261,9 +300,17 @@ export default function AdminTesista({ activeSidebarItem, setActiveSidebarItem }
     codigo: ''
   });
 
+  // Search Tesista states
+  const [searchProjectCode, setSearchProjectCode] = useState('');
+  const [searchDniOrName, setSearchDniOrName] = useState('');
+  const [searchedTesista, setSearchedTesista] = useState<SearchedTesista | null>(null);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [tramiteLogs, setTramiteLogs] = useState<TramiteLog[]>([]);
+
   // Sidebar configuration
   const sidebarItems = [
     { id: 'inicio', label: 'Inicio', icon: Home },
+    { id: 'buscar-tesista', label: 'Buscar Tesista', icon: Search },
     { id: 'proyectos-tesis', label: 'Proyecto de tesis', icon: FileText },
     { id: 'borrador-tesis', label: 'Borrador de tesis', icon: File },
     { id: 'sustentaciones', label: 'Sustentaciones', icon: Award },
@@ -272,6 +319,202 @@ export default function AdminTesista({ activeSidebarItem, setActiveSidebarItem }
     { id: 'ampliados', label: 'Proyectos ampliados', icon: Calendar },
     { id: 'tiempos', label: 'Ver tiempos', icon: Clock }
   ];
+
+  // Search functions
+  const searchTesistaByProjectCode = async (projectCode: string) => {
+    if (!projectCode.trim()) return;
+    
+    setSearchLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('thesis_projects')
+        .select(`
+          id,
+          titulo,
+          estado,
+          fecha_carga,
+          estudiante_principal_id,
+          research_lines!inner(nombre),
+          users!inner(
+            id,
+            dni,
+            codigo_matricula,
+            email,
+            first_name,
+            last_name,
+            full_name,
+            student_id,
+            major,
+            phone,
+            created_at
+          )
+        `)
+        .or(`id.eq.${projectCode},titulo.ilike.%${projectCode}%`)
+        .single();
+      
+      if (error) throw error;
+      
+      if (data) {
+        const tesista: SearchedTesista = {
+          id: data.users.id,
+          dni: data.users.dni || '',
+          codigo_matricula: data.users.codigo_matricula || '',
+          email: data.users.email,
+          first_name: data.users.first_name,
+          last_name: data.users.last_name,
+          full_name: data.users.full_name,
+          student_id: data.users.student_id,
+          major: data.users.major,
+          phone: data.users.phone,
+          created_at: data.users.created_at,
+          is_active: true,
+          proyecto: {
+            id: data.id,
+            codigo: projectCode,
+            titulo: data.titulo,
+            estado: data.estado,
+            linea_investigacion: data.research_lines?.nombre || '',
+            fecha_inicio_proyecto: data.fecha_carga,
+            fecha_inicio_borrador: '',
+            fecha_ultima: data.fecha_carga,
+            dias_transcurridos: Math.floor((new Date().getTime() - new Date(data.fecha_carga).getTime()) / (1000 * 3600 * 24)),
+            en_ejecucion: data.estado === 'en_curso'
+          }
+        };
+        
+        setSearchedTesista(tesista);
+        await loadTramiteLogs(tesista.id);
+      }
+    } catch (error) {
+      console.error('Error searching by project code:', error);
+      setSearchedTesista(null);
+    } finally {
+      setSearchLoading(false);
+    }
+  };
+
+  const searchTesistaByDniOrName = async (searchTerm: string) => {
+    if (!searchTerm.trim()) return;
+    
+    setSearchLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('users')
+        .select(`
+          id,
+          dni,
+          codigo_matricula,
+          email,
+          first_name,
+          last_name,
+          full_name,
+          student_id,
+          major,
+          phone,
+          created_at,
+          thesis_projects!left(
+            id,
+            titulo,
+            estado,
+            fecha_carga,
+            research_lines!inner(nombre)
+          )
+        `)
+        .or(`dni.eq.${searchTerm},last_name.ilike.%${searchTerm}%,full_name.ilike.%${searchTerm}%`)
+        .eq('selected_role', 'tesista')
+        .single();
+      
+      if (error) throw error;
+      
+      if (data) {
+        const proyecto = data.thesis_projects?.[0];
+        const tesista: SearchedTesista = {
+          id: data.id,
+          dni: data.dni || '',
+          codigo_matricula: data.codigo_matricula || '',
+          email: data.email,
+          first_name: data.first_name,
+          last_name: data.last_name,
+          full_name: data.full_name,
+          student_id: data.student_id,
+          major: data.major,
+          phone: data.phone,
+          created_at: data.created_at,
+          is_active: true,
+          proyecto: proyecto ? {
+            id: proyecto.id,
+            codigo: proyecto.id,
+            titulo: proyecto.titulo,
+            estado: proyecto.estado,
+            linea_investigacion: proyecto.research_lines?.nombre || '',
+            fecha_inicio_proyecto: proyecto.fecha_carga,
+            fecha_inicio_borrador: '',
+            fecha_ultima: proyecto.fecha_carga,
+            dias_transcurridos: Math.floor((new Date().getTime() - new Date(proyecto.fecha_carga).getTime()) / (1000 * 3600 * 24)),
+            en_ejecucion: proyecto.estado === 'en_curso'
+          } : undefined
+        };
+        
+        setSearchedTesista(tesista);
+        await loadTramiteLogs(tesista.id);
+      }
+    } catch (error) {
+      console.error('Error searching by DNI or name:', error);
+      setSearchedTesista(null);
+    } finally {
+      setSearchLoading(false);
+    }
+  };
+
+  const loadTramiteLogs = async (tesistaId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from('tram_thesis_log')
+        .select('*')
+        .eq('tesista_id', tesistaId)
+        .order('fecha_cambio', { ascending: false });
+      
+      if (error) throw error;
+      setTramiteLogs(data || []);
+    } catch (error) {
+      console.error('Error loading tramite logs:', error);
+      setTramiteLogs([]);
+    }
+  };
+
+  const handleTesistaAction = async (action: string) => {
+    if (!searchedTesista) return;
+    
+    // Handle different actions
+    switch (action) {
+      case 'renunciar':
+        console.log('Renunciar tesista:', searchedTesista.id);
+        break;
+      case 'habilitar':
+        console.log('Habilitar tesista:', searchedTesista.id);
+        break;
+      case 'habilitar_borrador':
+        console.log('Habilitar borrador:', searchedTesista.id);
+        break;
+      case 'agregar_ampliacion':
+        console.log('Agregar ampliación:', searchedTesista.id);
+        break;
+      case 'cambiar_datos':
+        console.log('Cambiar datos:', searchedTesista.id);
+        break;
+      case 'cambiar_titulo':
+        console.log('Cambiar título:', searchedTesista.id);
+        break;
+      case 'log_tramite':
+        console.log('Log trámite:', searchedTesista.id);
+        break;
+      case 'desactivar':
+        console.log('Desactivar tesista:', searchedTesista.id);
+        break;
+      default:
+        break;
+    }
+  };
 
   // Load tesistas from database
   const loadTesistas = async () => {
@@ -1325,6 +1568,260 @@ export default function AdminTesista({ activeSidebarItem, setActiveSidebarItem }
   // Render main content based on active sidebar item
   const renderContent = () => {
     switch (activeSidebarItem) {
+      case 'buscar-tesista':
+        return (
+          <div className="space-y-6 p-6">
+            {/* Search Section */}
+            <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-6">
+              <div className="flex items-center mb-6">
+                <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center mr-4">
+                  <Search className="w-6 h-6 text-blue-600" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-semibold text-black">Buscar Tesista</h3>
+                  <p className="text-sm text-gray-600">Encuentra tesistas por código de proyecto o DNI/apellidos</p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                {/* Search by Project Code */}
+                <div className="space-y-2">
+                  <label className="block text-sm font-medium text-gray-700">
+                    Buscar por Código de Proyecto
+                  </label>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={searchProjectCode}
+                      onChange={(e) => setSearchProjectCode(e.target.value)}
+                      placeholder="Ingrese Código de Proyecto"
+                      className="flex-1 px-3 py-2 border border-gray-300 rounded-md text-sm"
+                      onKeyDown={(e) => e.key === 'Enter' && searchTesistaByProjectCode(searchProjectCode)}
+                    />
+                    <button
+                      onClick={() => searchTesistaByProjectCode(searchProjectCode)}
+                      disabled={searchLoading}
+                      className="px-4 py-2 bg-blue-600 text-white rounded-md text-sm hover:bg-blue-700 disabled:opacity-50"
+                    >
+                      {searchLoading ? 'Buscando...' : 'Buscar'}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Search by DNI or Name */}
+                <div className="space-y-2">
+                  <label className="block text-sm font-medium text-gray-700">
+                    Buscar por DNI o Apellidos
+                  </label>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={searchDniOrName}
+                      onChange={(e) => setSearchDniOrName(e.target.value)}
+                      placeholder="Ingrese DNI o Apellidos"
+                      className="flex-1 px-3 py-2 border border-gray-300 rounded-md text-sm"
+                      onKeyDown={(e) => e.key === 'Enter' && searchTesistaByDniOrName(searchDniOrName)}
+                    />
+                    <button
+                      onClick={() => searchTesistaByDniOrName(searchDniOrName)}
+                      disabled={searchLoading}
+                      className="px-4 py-2 bg-blue-600 text-white rounded-md text-sm hover:bg-blue-700 disabled:opacity-50"
+                    >
+                      {searchLoading ? 'Buscando...' : 'Buscar'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Results Section */}
+            {searchedTesista && (
+              <>
+                {/* Action Buttons */}
+                <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-6">
+                  <h4 className="text-lg font-semibold text-black mb-4">Acciones</h4>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    <button
+                      onClick={() => handleTesistaAction('renunciar')}
+                      className="px-4 py-2 bg-red-600 text-white rounded-md text-sm hover:bg-red-700"
+                    >
+                      Renunciar
+                    </button>
+                    <button
+                      onClick={() => handleTesistaAction('habilitar')}
+                      className="px-4 py-2 bg-green-600 text-white rounded-md text-sm hover:bg-green-700"
+                    >
+                      Habilitar
+                    </button>
+                    <button
+                      onClick={() => handleTesistaAction('habilitar_borrador')}
+                      className="px-4 py-2 bg-blue-600 text-white rounded-md text-sm hover:bg-blue-700"
+                    >
+                      Habilitar Borrador
+                    </button>
+                    <button
+                      onClick={() => handleTesistaAction('agregar_ampliacion')}
+                      className="px-4 py-2 bg-purple-600 text-white rounded-md text-sm hover:bg-purple-700"
+                    >
+                      Agregar Ampliación
+                    </button>
+                    <button
+                      onClick={() => handleTesistaAction('cambiar_datos')}
+                      className="px-4 py-2 bg-yellow-600 text-white rounded-md text-sm hover:bg-yellow-700"
+                    >
+                      Cambiar Datos
+                    </button>
+                    <button
+                      onClick={() => handleTesistaAction('cambiar_titulo')}
+                      className="px-4 py-2 bg-indigo-600 text-white rounded-md text-sm hover:bg-indigo-700"
+                    >
+                      Cambiar Título
+                    </button>
+                    <button
+                      onClick={() => handleTesistaAction('log_tramite')}
+                      className="px-4 py-2 bg-gray-600 text-white rounded-md text-sm hover:bg-gray-700"
+                    >
+                      Log Trámite
+                    </button>
+                    <button
+                      onClick={() => handleTesistaAction('desactivar')}
+                      className="px-4 py-2 bg-red-800 text-white rounded-md text-sm hover:bg-red-900"
+                    >
+                      Desactivar
+                    </button>
+                  </div>
+                </div>
+
+                {/* Student Information Table */}
+                <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-6">
+                  <h4 className="text-lg font-semibold text-black mb-4">Datos Personales y Seguimiento</h4>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead className="bg-gray-50">
+                        <tr>
+                          <th className="px-4 py-2 text-left font-medium text-gray-900">DNI</th>
+                          <th className="px-4 py-2 text-left font-medium text-gray-900">Código</th>
+                          <th className="px-4 py-2 text-left font-medium text-gray-900">Activo</th>
+                          <th className="px-4 py-2 text-left font-medium text-gray-900">Datos Personales</th>
+                          <th className="px-4 py-2 text-left font-medium text-gray-900">Carrera</th>
+                          <th className="px-4 py-2 text-left font-medium text-gray-900">Celular</th>
+                          <th className="px-4 py-2 text-left font-medium text-gray-900">Correo</th>
+                          <th className="px-4 py-2 text-left font-medium text-gray-900">Registro</th>
+                          <th className="px-4 py-2 text-left font-medium text-gray-900">Cód. Proyecto</th>
+                          <th className="px-4 py-2 text-left font-medium text-gray-900">Año</th>
+                          <th className="px-4 py-2 text-left font-medium text-gray-900">Estado</th>
+                          <th className="px-4 py-2 text-left font-medium text-gray-900">Línea</th>
+                          <th className="px-4 py-2 text-left font-medium text-gray-900">Fecha Inicio Proyecto</th>
+                          <th className="px-4 py-2 text-left font-medium text-gray-900">Fecha Inicio Borrador</th>
+                          <th className="px-4 py-2 text-left font-medium text-gray-900">Última Fecha</th>
+                          <th className="px-4 py-2 text-left font-medium text-gray-900">Días</th>
+                          <th className="px-4 py-2 text-left font-medium text-gray-900">Ejecución</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr className="border-t">
+                          <td className="px-4 py-2">{searchedTesista.dni}</td>
+                          <td className="px-4 py-2">{searchedTesista.codigo_matricula}</td>
+                          <td className="px-4 py-2">
+                            <span className={`px-2 py-1 rounded-full text-xs ${
+                              searchedTesista.is_active ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                            }`}>
+                              {searchedTesista.is_active ? 'Activo' : 'Inactivo'}
+                            </span>
+                          </td>
+                          <td className="px-4 py-2">{searchedTesista.full_name}</td>
+                          <td className="px-4 py-2">{searchedTesista.major}</td>
+                          <td className="px-4 py-2">{searchedTesista.phone}</td>
+                          <td className="px-4 py-2">{searchedTesista.email}</td>
+                          <td className="px-4 py-2">{new Date(searchedTesista.created_at).toLocaleDateString()}</td>
+                          <td className="px-4 py-2">{searchedTesista.proyecto?.codigo || 'N/A'}</td>
+                          <td className="px-4 py-2">{new Date(searchedTesista.created_at).getFullYear()}</td>
+                          <td className="px-4 py-2">
+                            <span className={`px-2 py-1 rounded-full text-xs ${
+                              searchedTesista.proyecto?.estado === 'en_curso' ? 'bg-blue-100 text-blue-800' :
+                              searchedTesista.proyecto?.estado === 'aprobado' ? 'bg-green-100 text-green-800' :
+                              'bg-gray-100 text-gray-800'
+                            }`}>
+                              {searchedTesista.proyecto?.estado || 'Sin proyecto'}
+                            </span>
+                          </td>
+                          <td className="px-4 py-2">{searchedTesista.proyecto?.linea_investigacion || 'N/A'}</td>
+                          <td className="px-4 py-2">{searchedTesista.proyecto?.fecha_inicio_proyecto ? new Date(searchedTesista.proyecto.fecha_inicio_proyecto).toLocaleDateString() : 'N/A'}</td>
+                          <td className="px-4 py-2">{searchedTesista.proyecto?.fecha_inicio_borrador ? new Date(searchedTesista.proyecto.fecha_inicio_borrador).toLocaleDateString() : 'N/A'}</td>
+                          <td className="px-4 py-2">{searchedTesista.proyecto?.fecha_ultima ? new Date(searchedTesista.proyecto.fecha_ultima).toLocaleDateString() : 'N/A'}</td>
+                          <td className="px-4 py-2">{searchedTesista.proyecto?.dias_transcurridos || 0}</td>
+                          <td className="px-4 py-2">
+                            <span className={`px-2 py-1 rounded-full text-xs ${
+                              searchedTesista.proyecto?.en_ejecucion ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                            }`}>
+                              {searchedTesista.proyecto?.en_ejecucion ? 'En Ejecución' : 'Pausado'}
+                            </span>
+                          </td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                {/* Status Change History */}
+                <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-6">
+                  <h4 className="text-lg font-semibold text-black mb-4">Estados de Cambio</h4>
+                  {tramiteLogs.length > 0 ? (
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead className="bg-gray-50">
+                          <tr>
+                            <th className="px-4 py-2 text-left font-medium text-gray-900">Fecha</th>
+                            <th className="px-4 py-2 text-left font-medium text-gray-900">Estado Anterior</th>
+                            <th className="px-4 py-2 text-left font-medium text-gray-900">Estado Nuevo</th>
+                            <th className="px-4 py-2 text-left font-medium text-gray-900">Descripción</th>
+                            <th className="px-4 py-2 text-left font-medium text-gray-900">Usuario</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {tramiteLogs.map((log, index) => (
+                            <tr key={index} className="border-t">
+                              <td className="px-4 py-2">{new Date(log.fecha_cambio).toLocaleString()}</td>
+                              <td className="px-4 py-2">
+                                <span className="px-2 py-1 bg-gray-100 text-gray-800 rounded-full text-xs">
+                                  {log.estado_anterior}
+                                </span>
+                              </td>
+                              <td className="px-4 py-2">
+                                <span className="px-2 py-1 bg-blue-100 text-blue-800 rounded-full text-xs">
+                                  {log.estado_nuevo}
+                                </span>
+                              </td>
+                              <td className="px-4 py-2">{log.descripcion}</td>
+                              <td className="px-4 py-2">{log.usuario_nombre}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : (
+                    <div className="text-center text-gray-500 py-8">
+                      <Clock className="w-12 h-12 mx-auto mb-4 opacity-50" />
+                      <p>No hay registros de cambios de estado</p>
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
+
+            {/* No Results */}
+            {!searchedTesista && !searchLoading && (searchProjectCode || searchDniOrName) && (
+              <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-6">
+                <div className="text-center text-gray-500 py-8">
+                  <Search className="w-12 h-12 mx-auto mb-4 opacity-50" />
+                  <p>No se encontraron resultados</p>
+                  <p className="text-sm">Verifique los criterios de búsqueda</p>
+                </div>
+              </div>
+            )}
+          </div>
+        );
+
       case 'inicio':
         return (
           <div className="space-y-0 p-0">
@@ -1688,7 +2185,8 @@ export default function AdminTesista({ activeSidebarItem, setActiveSidebarItem }
                     type="text"
                     value={filters.nombreJurado}
                     onChange={(e) => setFilters(prev => ({ ...prev, nombreJurado: e.target.value }))}
-                                        className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent text-black"
+                    placeholder="Buscar jurado..."
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent text-black"
                   />
                 </div>
 
@@ -1701,7 +2199,8 @@ export default function AdminTesista({ activeSidebarItem, setActiveSidebarItem }
                     type="text"
                     value={filters.codigo}
                     onChange={(e) => setFilters(prev => ({ ...prev, codigo: e.target.value }))}
-                                        className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent text-black"
+                    placeholder="Buscar código..."
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent text-black"
                   />
                 </div>
 
@@ -1924,7 +2423,8 @@ export default function AdminTesista({ activeSidebarItem, setActiveSidebarItem }
                     type="text"
                     value={borradorFilters.nombreJurado}
                     onChange={(e) => setBorradorFilters(prev => ({ ...prev, nombreJurado: e.target.value }))}
-                                        className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-purple-500 focus:border-transparent text-black"
+                    placeholder="Buscar jurado..."
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-purple-500 focus:border-transparent text-black"
                   />
                 </div>
 
@@ -1937,7 +2437,8 @@ export default function AdminTesista({ activeSidebarItem, setActiveSidebarItem }
                     type="text"
                     value={borradorFilters.codigo}
                     onChange={(e) => setBorradorFilters(prev => ({ ...prev, codigo: e.target.value }))}
-                                        className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-purple-500 focus:border-transparent text-black"
+                    placeholder="Buscar código..."
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-purple-500 focus:border-transparent text-black"
                   />
                 </div>
 
@@ -2141,7 +2642,8 @@ export default function AdminTesista({ activeSidebarItem, setActiveSidebarItem }
                     type="text"
                     value={sustentacionFilters.nombreJurado}
                     onChange={(e) => setSustentacionFilters(prev => ({ ...prev, nombreJurado: e.target.value }))}
-                                        className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-yellow-500 focus:border-transparent text-black"
+                    placeholder="Buscar jurado..."
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-yellow-500 focus:border-transparent text-black"
                   />
                 </div>
 
@@ -2154,7 +2656,8 @@ export default function AdminTesista({ activeSidebarItem, setActiveSidebarItem }
                     type="text"
                     value={sustentacionFilters.codigo}
                     onChange={(e) => setSustentacionFilters(prev => ({ ...prev, codigo: e.target.value }))}
-                                        className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-yellow-500 focus:border-transparent text-black"
+                    placeholder="Buscar código..."
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-yellow-500 focus:border-transparent text-black"
                   />
                 </div>
 
@@ -2377,7 +2880,8 @@ export default function AdminTesista({ activeSidebarItem, setActiveSidebarItem }
                     type="text"
                     value={rechazadoFilters.nombreJurado}
                     onChange={(e) => setRechazadoFilters(prev => ({ ...prev, nombreJurado: e.target.value }))}
-                                        className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-red-500 focus:border-transparent text-black"
+                    placeholder="Buscar jurado..."
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-red-500 focus:border-transparent text-black"
                   />
                 </div>
 
@@ -2390,7 +2894,8 @@ export default function AdminTesista({ activeSidebarItem, setActiveSidebarItem }
                     type="text"
                     value={rechazadoFilters.codigo}
                     onChange={(e) => setRechazadoFilters(prev => ({ ...prev, codigo: e.target.value }))}
-                                        className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-red-500 focus:border-transparent text-black"
+                    placeholder="Buscar código..."
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-red-500 focus:border-transparent text-black"
                   />
                 </div>
 
@@ -2597,7 +3102,8 @@ export default function AdminTesista({ activeSidebarItem, setActiveSidebarItem }
                     type="text"
                     value={caducadoFilters.nombreJurado}
                     onChange={(e) => setCaducadoFilters(prev => ({ ...prev, nombreJurado: e.target.value }))}
-                                        className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-orange-500 focus:border-transparent text-black"
+                    placeholder="Buscar jurado..."
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-orange-500 focus:border-transparent text-black"
                   />
                 </div>
 
@@ -2610,7 +3116,8 @@ export default function AdminTesista({ activeSidebarItem, setActiveSidebarItem }
                     type="text"
                     value={caducadoFilters.codigo}
                     onChange={(e) => setCaducadoFilters(prev => ({ ...prev, codigo: e.target.value }))}
-                                        className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-orange-500 focus:border-transparent text-black"
+                    placeholder="Buscar código..."
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-orange-500 focus:border-transparent text-black"
                   />
                 </div>
 
@@ -2817,7 +3324,8 @@ export default function AdminTesista({ activeSidebarItem, setActiveSidebarItem }
                     type="text"
                     value={ampliadoFilters.codigo}
                     onChange={(e) => setAmpliadoFilters(prev => ({ ...prev, codigo: e.target.value }))}
-                                        className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                    placeholder="Buscar código..."
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-green-500 focus:border-transparent"
                   />
                 </div>
 
@@ -3013,7 +3521,8 @@ export default function AdminTesista({ activeSidebarItem, setActiveSidebarItem }
                     type="text"
                     value={tiempoFilters.codigo}
                     onChange={(e) => setTiempoFilters(prev => ({ ...prev, codigo: e.target.value }))}
-                                        className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                    placeholder="Buscar código..."
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
                   />
                 </div>
 
