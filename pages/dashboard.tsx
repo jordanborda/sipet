@@ -4,6 +4,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { supabase } from "@/lib/supabase";
 import Header from "@/components/Header";
+import Footer from "@/components/Footer";
 import { toast } from "sonner";
 import PerfilComponent from "@/components/users/perfil";
 
@@ -369,13 +370,7 @@ export default function Dashboard() {
       console.log(`✅ DASHBOARD: Usuario tiene roles asignados, acceso directo a ${role}`);
       
       // Redirigir directamente según el rol seleccionado
-      if (role === 'asesor' || role === 'revisor') {
-        router.push('/docente'); // Both asesor and revisor use the docente portal
-      } else if (role === 'tesista') {
-        router.push('/tesista');
-      } else {
-        router.push(`/${role}`);
-      }
+      router.push(`/${role}`);
       return;
     }
 
@@ -394,7 +389,7 @@ export default function Dashboard() {
   }
 
   return (
-    <div className={`${geistSans.variable} ${geistMono.variable} min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50`}>
+    <div className={`${geistSans.variable} ${geistMono.variable} min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 flex flex-col`}>
       <Header />
 
       {/* Main Dashboard */}
@@ -550,6 +545,8 @@ export default function Dashboard() {
 
         </div>
       </main>
+
+      <Footer />
 
       {/* Perfil Component */}
       {showSetupModal && (

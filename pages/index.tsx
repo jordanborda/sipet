@@ -22,68 +22,64 @@ const geistMono = Geist_Mono({
 export default function Home() {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState("login");
-  
-  // Verificar si ya hay una sesión activa al cargar la página
-  useEffect(() => {
-    console.log('🏠 HOME: Componente Home montado');
-    console.log('🌐 HOME: URL actual:', window.location.href);
-    
-    const checkExistingSession = async () => {
-      console.log('🔍 HOME: Verificando sesión existente...');
-      
-      // Verificar si venimos de un logout (parámetro en URL o flag)
-      const urlParams = new URLSearchParams(window.location.search);
-      const fromLogout = urlParams.get('logout') === 'true';
-      
-      if (fromLogout) {
-        console.log('🚪 HOME: Llegamos desde logout, limpiando cualquier sesión residual...');
-        
-        // Asegurar limpieza completa
-        await supabase.auth.signOut();
-        
-        // Limpiar URL
-        window.history.replaceState({}, document.title, '/');
-        
-        console.log('✅ HOME: Limpieza post-logout completada');
-        return;
-      }
-      
-      const { data: { session } } = await supabase.auth.getSession();
-      
-      console.log('📊 HOME: Resultado de getSession:', {
-        session: session ? {
-          user: {
-            id: session.user.id,
-            email: session.user.email,
-            provider: session.user.app_metadata?.provider
-          },
-          expires_at: session.expires_at
-        } : null
-      });
-      
-      if (session) {
-        console.log('✅ HOME: Sesión encontrada, verificando estado del email');
-        
-        // Verificar si el email está confirmado
-        if (!session.user.email_confirmed_at) {
-          console.log('⚠️ HOME: Email no verificado, mostrando pantalla de verificación');
-          setPendingEmail(session.user.email || "");
-          setShowEmailVerification(true);
-        } else {
-          console.log('✅ HOME: Email verificado, redirigiendo al dashboard');
-          router.push('/dashboard');
-        }
-      } else {
-        console.log('ℹ️ HOME: No hay sesión activa, mostrando página de login');
-      }
-    };
-    
-    checkExistingSession();
-  }, [router]);
+  const [isCheckingSession, setIsCheckingSession] = useState(true);
+  const [hasActiveSession, setHasActiveSession] = useState(false);
   const [loading, setLoading] = useState<string | null>(null);
   const [showEmailVerification, setShowEmailVerification] = useState(false);
   const [pendingEmail, setPendingEmail] = useState("");
   const [showPasswordReset, setShowPasswordReset] = useState(false);
+  
+  // Verificar sesión activa una sola vez al montar
+  useEffect(() => {
+    let isMounted = true;
+    let hasProcessed = false;
+    
+    const checkExistingSession = async () => {
+      if (hasProcessed) return;
+      hasProcessed = true;
+      
+      try {
+        // Verificar si venimos de un logout
+        const urlParams = new URLSearchParams(window.location.search);
+        const fromLogout = urlParams.get('logout') === 'true';
+        
+        if (fromLogout) {
+          await supabase.auth.signOut();
+          window.history.replaceState({}, document.title, '/');
+          if (isMounted) setIsCheckingSession(false);
+          return;
+        }
+        
+        const { data: { session } } = await supabase.auth.getSession();
+        
+        if (!isMounted) return;
+        
+        if (session) {
+          if (!session.user.email_confirmed_at) {
+            setPendingEmail(session.user.email || "");
+            setShowEmailVerification(true);
+          } else {
+            // Marcar que hay sesión activa sin redirigir
+            setHasActiveSession(true);
+          }
+        }
+        
+        if (isMounted) setIsCheckingSession(false);
+      } catch (error) {
+        console.error('Error checking session:', error);
+        if (isMounted) setIsCheckingSession(false);
+      }
+    };
+    
+    if (router.isReady && !hasProcessed) {
+      checkExistingSession();
+    }
+    
+    return () => {
+      isMounted = false;
+    };
+  }, [router.isReady]);
+  
   const [resetEmail, setResetEmail] = useState("");
   const [resetStep, setResetStep] = useState<'email' | 'sent'>('email');
   const [loginData, setLoginData] = useState({ email: "", password: "" });
@@ -96,25 +92,31 @@ export default function Home() {
   });
 
   const handleOAuthLogin = async (provider: 'google' | 'azure') => {
-    console.log(`🔐 HOME: Iniciando login con ${provider}`);
-    
-    // Verificar si hay flag para forzar selección de cuenta
-    const forceSelection = localStorage.getItem('force_account_selection') === 'true';
-    if (forceSelection) {
-      console.log('🔄 HOME: Flag detectado - se forzará selección de cuenta Google');
-    }
-    
     setLoading(provider);
+    
     try {
+      // Limpiar sesiones existentes antes del OAuth login
+      await supabase.auth.signOut({ scope: 'global' });
+      
+      // Limpiar storage
+      const storageKeys = Object.keys(localStorage);
+      storageKeys.forEach(key => {
+        if (key.startsWith('supabase') || key.includes('auth') || key.startsWith('sb-')) {
+          localStorage.removeItem(key);
+        }
+      });
+      
+      // Verificar si hay flag para forzar selección de cuenta
+      const forceSelection = localStorage.getItem('force_account_selection') === 'true';
+      
+      // Esperar un momento para que la limpieza se complete
+      await new Promise(resolve => setTimeout(resolve, 100));
+      
       const { error } = await signInWithProvider(provider);
       if (error) {
-        console.error(`❌ HOME: Error en login con ${provider}:`, error);
         alert(`Error: ${error.message}`);
-      } else {
-        console.log(`✅ HOME: Login con ${provider} iniciado correctamente`);
       }
     } catch (err) {
-      console.error(`💥 HOME: Error inesperado con ${provider}:`, err);
       alert("Error al conectar con el proveedor");
     } finally {
       setLoading(null);
@@ -124,12 +126,52 @@ export default function Home() {
   const handleEmailLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading("email");
+    
     try {
+      // Primero limpiar cualquier sesión existente
+      await supabase.auth.signOut({ scope: 'global' });
+      
+      // Limpiar cookies de Supabase manualmente
+      const allCookies = document.cookie.split(';');
+      allCookies.forEach(cookie => {
+        const eqPos = cookie.indexOf('=');
+        const name = eqPos > -1 ? cookie.substr(0, eqPos).trim() : cookie.trim();
+        
+        if (name.startsWith('sb-') || name.includes('supabase') || name.includes('auth-token')) {
+          document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;`;
+          document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; domain=${window.location.hostname};`;
+          document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; domain=.${window.location.hostname};`;
+        }
+      });
+      
+      // Limpiar localStorage y sessionStorage
+      const storageKeys = Object.keys(localStorage);
+      storageKeys.forEach(key => {
+        if (key.startsWith('supabase') || key.includes('auth') || key.startsWith('sb-')) {
+          localStorage.removeItem(key);
+        }
+      });
+      
+      const sessionKeys = Object.keys(sessionStorage);
+      sessionKeys.forEach(key => {
+        if (key.startsWith('supabase') || key.includes('auth') || key.startsWith('sb-')) {
+          sessionStorage.removeItem(key);
+        }
+      });
+      
+      // Esperar un momento para que la limpieza se complete
+      await new Promise(resolve => setTimeout(resolve, 100));
+      
+      // Ahora hacer el login
       const { error } = await signInWithEmail(loginData.email, loginData.password);
       if (error) {
         alert(`Error: ${error.message}`);
       } else {
-        router.push('/dashboard');
+        // Esperar un momento para que la nueva sesión se establezca
+        await new Promise(resolve => setTimeout(resolve, 500));
+        
+        // Forzar recarga completa para asegurar nueva sesión
+        window.location.href = '/dashboard';
       }
     } catch (err) {
       alert("Error al iniciar sesión");
@@ -163,8 +205,13 @@ export default function Home() {
           setPendingEmail(registerData.email);
           setShowEmailVerification(true);
         } else {
-          // Si el email ya está verificado (OAuth), redirigir al dashboard
-          router.push('/dashboard');
+          // Si el email ya está verificado, forzar navegación al dashboard
+          alert("¡Registro exitoso! Redirigiendo al dashboard...");
+          
+          // Usar window.location.href para evitar cualquier bloqueo
+          setTimeout(() => {
+            window.location.href = '/dashboard';
+          }, 1000);
         }
       }
     } catch (err) {
@@ -224,6 +271,20 @@ export default function Home() {
     setResetEmail("");
     setResetStep('email');
   };
+
+  // Mostrar loading mientras se verifica la sesión
+  if (isCheckingSession) {
+    return (
+      <div className={`${geistSans.variable} ${geistMono.variable} min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50`}>
+        <div className="flex items-center justify-center min-h-screen">
+          <div className="text-center">
+            <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+            <p className="text-gray-600 text-sm">Verificando sesión...</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   // Si se debe mostrar la pantalla de verificación de email
   if (showEmailVerification) {
@@ -467,6 +528,34 @@ export default function Home() {
 
       {/* Main Content */}
       <main className="flex-1 flex items-center justify-center p-4">
+        {hasActiveSession && (
+          <div className="fixed top-4 right-4 bg-green-100 border border-green-300 rounded-lg p-4 shadow-lg z-50">
+            <div className="flex items-center space-x-3">
+              <div className="w-3 h-3 bg-green-500 rounded-full"></div>
+              <div>
+                <p className="text-sm font-medium text-green-800">Sesión Activa</p>
+                <p className="text-xs text-green-700">Ya tienes una sesión iniciada</p>
+              </div>
+              <button
+                onClick={async () => {
+                  // Asegurar que tenemos una sesión válida antes de navegar
+                  const { data: { session } } = await supabase.auth.getSession();
+                  if (session) {
+                    // Usar Next.js router para navegación
+                    router.push('/dashboard');
+                  } else {
+                    // Si no hay sesión, recargar la página para limpiar estado
+                    window.location.reload();
+                  }
+                }}
+                className="ml-4 px-3 py-1 bg-green-600 text-white text-xs rounded hover:bg-green-700 transition-colors"
+              >
+                Ir al Dashboard
+              </button>
+            </div>
+          </div>
+        )}
+        
         <div className="w-full max-w-6xl grid grid-cols-1 lg:grid-cols-2 gap-8 items-center">
           
           {/* Left Side - University Info */}

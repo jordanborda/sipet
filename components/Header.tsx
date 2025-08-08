@@ -11,6 +11,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Bell, User, Phone, ExternalLink, Globe, LogOut } from "lucide-react";
+import Image from 'next/image';
 
 interface User {
   id: string;
@@ -305,9 +306,11 @@ export default function Header({ title = "Universidad San Martín", subtitle = "
                         <p className="text-xs text-white/80">{user.email}</p>
                       </div>
                       {user.avatar_url ? (
-                        <img 
+                        <Image 
                           src={user.avatar_url} 
                           alt="Avatar" 
+                          width={32}
+                          height={32}
                           className="w-8 h-8 rounded-full"
                         />
                       ) : (

@@ -7,7 +7,8 @@ import Footer from "@/components/Footer";
 import AdminTesista from "@/components/admin/admin-tesista";
 import AdminDocente from "@/components/admin/admin-docente";
 import AdminReportes from "@/components/admin/admin-reportes";
-import { Eye, EyeOff, Lock, User, Users, BarChart3, BookOpen } from "lucide-react";
+import AdminSuperAdmin from "@/components/admin/admin-superadmin";
+import { Eye, EyeOff, Lock, User, Users, BarChart3, BookOpen, Shield } from "lucide-react";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 
 const geistSans = Geist({
@@ -43,7 +44,8 @@ export default function Admin() {
   const [activeSidebarItem, setActiveSidebarItem] = useState({
     tesistas: 'inicio',
     docentes: 'repositorio-docentes',
-    reportes: 'reportes-admin'
+    reportes: 'reportes-admin',
+    superadmin: 'lineas-investigacion-admin'
   });
   
   // Form data
@@ -280,7 +282,8 @@ export default function Admin() {
   const tabs = [
     { id: 'tesistas', title: 'TESISTAS', icon: Users },
     { id: 'docentes', title: 'DOCENTES', icon: BookOpen },
-    { id: 'reportes', title: 'REPORTES ADMIN', icon: BarChart3 }
+    { id: 'reportes', title: 'REPORTES ADMIN', icon: BarChart3 },
+    { id: 'superadmin', title: 'SUPERADMIN', icon: Shield }
   ];
 
   // Admin Dashboard with tesista.tsx styling
@@ -360,6 +363,16 @@ export default function Admin() {
                     <AdminReportes 
                       activeSidebarItem={activeSidebarItem.reportes}
                       setActiveSidebarItem={(item: string) => setActiveSidebarItem(prev => ({ ...prev, reportes: item }))}
+                    />
+                  </div>
+                </TabsContent>
+
+                {/* SUPERADMIN Tab */}
+                <TabsContent value="superadmin" className="py-0 px-0">
+                  <div className="w-full">
+                    <AdminSuperAdmin 
+                      activeSidebarItem={activeSidebarItem.superadmin}
+                      setActiveSidebarItem={(item: string) => setActiveSidebarItem(prev => ({ ...prev, superadmin: item }))}
                     />
                   </div>
                 </TabsContent>

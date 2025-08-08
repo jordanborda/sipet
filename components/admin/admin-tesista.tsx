@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { supabase } from "@/lib/supabase";
 import { Home, FileText, File, Award, XCircle, Clock, Calendar, Settings, User, CheckCircle, AlertCircle, BarChart3, TrendingUp, Search, Filter, RotateCcw, Eye, Edit, Trash2 } from "lucide-react";
 
@@ -536,7 +536,7 @@ export default function AdminTesista({ activeSidebarItem, setActiveSidebarItem }
   };
 
   // Load tramites statistics (simulated data for now)
-  const loadTramiteStats = async () => {
+  const loadTramiteStats = useCallback(async () => {
     setStatsLoading(true);
     try {
       // For now, we'll simulate the data since the tables might not exist yet
@@ -573,7 +573,7 @@ export default function AdminTesista({ activeSidebarItem, setActiveSidebarItem }
     } finally {
       setStatsLoading(false);
     }
-  };
+  }, [tesistas]);
 
   useEffect(() => {
     loadTesistas();
@@ -583,7 +583,7 @@ export default function AdminTesista({ activeSidebarItem, setActiveSidebarItem }
     if (tesistas.length > 0) {
       loadTramiteStats();
     }
-  }, [tesistas]);
+  }, [tesistas, loadTramiteStats]);
 
   // Load proyectos de tesis (simulated data for now)
   const loadProyectos = async () => {
@@ -663,7 +663,7 @@ export default function AdminTesista({ activeSidebarItem, setActiveSidebarItem }
   };
 
   // Filter proyectos based on current filters
-  const applyFilters = () => {
+  const applyFilters = useCallback(() => {
     let filtered = [...proyectos];
 
     // Filter by estado
@@ -691,7 +691,7 @@ export default function AdminTesista({ activeSidebarItem, setActiveSidebarItem }
     }
 
     setFilteredProyectos(filtered);
-  };
+  }, [proyectos, filters]);
 
   // Clear all filters
   const clearFilters = () => {
@@ -712,7 +712,7 @@ export default function AdminTesista({ activeSidebarItem, setActiveSidebarItem }
   // Apply filters when filters change
   useEffect(() => {
     applyFilters();
-  }, [filters, proyectos]);
+  }, [filters, proyectos, applyFilters]);
 
   // Load borradores de tesis (simulated data for now)
   const loadBorradores = async () => {
@@ -804,7 +804,7 @@ export default function AdminTesista({ activeSidebarItem, setActiveSidebarItem }
   };
 
   // Filter borradores based on current filters
-  const applyBorradorFilters = () => {
+  const applyBorradorFilters = useCallback(() => {
     let filtered = [...borradores];
 
     // Filter by estado
@@ -832,7 +832,7 @@ export default function AdminTesista({ activeSidebarItem, setActiveSidebarItem }
     }
 
     setFilteredBorradores(filtered);
-  };
+  }, [borradores, borradorFilters]);
 
   // Clear all borrador filters
   const clearBorradorFilters = () => {
@@ -853,7 +853,7 @@ export default function AdminTesista({ activeSidebarItem, setActiveSidebarItem }
   // Apply borrador filters when filters change
   useEffect(() => {
     applyBorradorFilters();
-  }, [borradorFilters, borradores]);
+  }, [borradorFilters, borradores, applyBorradorFilters]);
 
   // Load sustentaciones (simulated data for now)
   const loadSustentaciones = async () => {
@@ -954,7 +954,7 @@ export default function AdminTesista({ activeSidebarItem, setActiveSidebarItem }
   };
 
   // Filter sustentaciones based on current filters
-  const applySustentacionFilters = () => {
+  const applySustentacionFilters = useCallback(() => {
     let filtered = [...sustentaciones];
 
     // Filter by carrera
@@ -977,7 +977,7 @@ export default function AdminTesista({ activeSidebarItem, setActiveSidebarItem }
     }
 
     setFilteredSustentaciones(filtered);
-  };
+  }, [sustentaciones, sustentacionFilters]);
 
   // Clear all sustentacion filters
   const clearSustentacionFilters = () => {
@@ -997,7 +997,7 @@ export default function AdminTesista({ activeSidebarItem, setActiveSidebarItem }
   // Apply sustentacion filters when filters change
   useEffect(() => {
     applySustentacionFilters();
-  }, [sustentacionFilters, sustentaciones]);
+  }, [sustentacionFilters, sustentaciones, applySustentacionFilters]);
 
   // Load rechazados (simulated data for now)
   const loadRechazados = async () => {
@@ -1077,7 +1077,7 @@ export default function AdminTesista({ activeSidebarItem, setActiveSidebarItem }
   };
 
   // Filter rechazados based on current filters
-  const applyRechazadoFilters = () => {
+  const applyRechazadoFilters = useCallback(() => {
     let filtered = [...rechazados];
 
     // Filter by carrera
@@ -1100,7 +1100,7 @@ export default function AdminTesista({ activeSidebarItem, setActiveSidebarItem }
     }
 
     setFilteredRechazados(filtered);
-  };
+  }, [rechazados, rechazadoFilters]);
 
   // Clear all rechazado filters
   const clearRechazadoFilters = () => {
@@ -1120,7 +1120,7 @@ export default function AdminTesista({ activeSidebarItem, setActiveSidebarItem }
   // Apply rechazado filters when filters change
   useEffect(() => {
     applyRechazadoFilters();
-  }, [rechazadoFilters, rechazados]);
+  }, [rechazadoFilters, rechazados, applyRechazadoFilters]);
 
   // Load caducados (simulated data for now)
   const loadCaducados = async () => {
@@ -1212,7 +1212,7 @@ export default function AdminTesista({ activeSidebarItem, setActiveSidebarItem }
   };
 
   // Filter caducados based on current filters
-  const applyCaducadoFilters = () => {
+  const applyCaducadoFilters = useCallback(() => {
     let filtered = [...caducados];
 
     // Filter by carrera
@@ -1235,7 +1235,7 @@ export default function AdminTesista({ activeSidebarItem, setActiveSidebarItem }
     }
 
     setFilteredCaducados(filtered);
-  };
+  }, [caducados, caducadoFilters]);
 
   // Clear all caducado filters
   const clearCaducadoFilters = () => {
@@ -1255,7 +1255,7 @@ export default function AdminTesista({ activeSidebarItem, setActiveSidebarItem }
   // Apply caducado filters when filters change
   useEffect(() => {
     applyCaducadoFilters();
-  }, [caducadoFilters, caducados]);
+  }, [caducadoFilters, caducados, applyCaducadoFilters]);
 
   // Load ampliados (simulated data for now)
   const loadAmpliados = async () => {
@@ -1353,7 +1353,7 @@ export default function AdminTesista({ activeSidebarItem, setActiveSidebarItem }
   };
 
   // Filter ampliados based on current filters
-  const applyAmpliadoFilters = () => {
+  const applyAmpliadoFilters = useCallback(() => {
     let filtered = [...ampliados];
 
     // Filter by carrera
@@ -1369,7 +1369,7 @@ export default function AdminTesista({ activeSidebarItem, setActiveSidebarItem }
     }
 
     setFilteredAmpliados(filtered);
-  };
+  }, [ampliados, ampliadoFilters]);
 
   // Clear all ampliado filters
   const clearAmpliadoFilters = () => {
@@ -1389,7 +1389,7 @@ export default function AdminTesista({ activeSidebarItem, setActiveSidebarItem }
   // Apply ampliado filters when filters change
   useEffect(() => {
     applyAmpliadoFilters();
-  }, [ampliadoFilters, ampliados]);
+  }, [ampliadoFilters, ampliados, applyAmpliadoFilters]);
 
   // Load tiempos (simulated data for now)
   const loadTiempos = async () => {
@@ -1500,7 +1500,7 @@ export default function AdminTesista({ activeSidebarItem, setActiveSidebarItem }
   };
 
   // Filter tiempos based on current filters
-  const applyTiempoFilters = () => {
+  const applyTiempoFilters = useCallback(() => {
     let filtered = [...tiempos];
 
     // Filter by carrera
@@ -1516,7 +1516,7 @@ export default function AdminTesista({ activeSidebarItem, setActiveSidebarItem }
     }
 
     setFilteredTiempos(filtered);
-  };
+  }, [tiempos, tiempoFilters]);
 
   // Clear all tiempo filters
   const clearTiempoFilters = () => {
@@ -1536,7 +1536,7 @@ export default function AdminTesista({ activeSidebarItem, setActiveSidebarItem }
   // Apply tiempo filters when filters change
   useEffect(() => {
     applyTiempoFilters();
-  }, [tiempoFilters, tiempos]);
+  }, [tiempoFilters, tiempos, applyTiempoFilters]);
 
   // Render sidebar
   const renderSidebar = () => (

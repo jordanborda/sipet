@@ -1,98 +1,96 @@
 import { useRouter } from 'next/router';
-import { ExternalLink, FileText, Shield, Database, HelpCircle, BookOpen, MessageSquare, Info, Cookie } from 'lucide-react';
+import Image from 'next/image';
 
 export default function Footer() {
   const router = useRouter();
 
-  const firstColumnLinks = [
-    { name: 'Legal information', href: '/legal-information', icon: FileText },
-    { name: 'Legal notice', href: '/legal-notice', icon: Shield },
-    { name: 'Privacy policy', href: '/privacy-policy', icon: Shield },
-    { name: 'Open access data', href: '/open-access-data', icon: Database },
-  ];
-
-  const secondColumnLinks = [
-    { name: 'FAQ', href: '/faq', icon: HelpCircle },
-    { name: 'Quick guide', href: '/quick-guide', icon: BookOpen },
-    { name: 'Send Feedback', href: '/send-feedback', icon: MessageSquare },
-    { name: 'About RITEC', href: '/about-ritec', icon: Info },
-    { name: 'Cookie policy', href: '/cookie-policy', icon: Cookie },
+  const footerSections = [
+    {
+      title: 'Legal',
+      links: [
+        { name: 'Información Legal', href: '/legal-information' },
+        { name: 'Aviso Legal', href: '/legal-notice' },
+        { name: 'Política de Privacidad', href: '/privacy-policy' },
+        { name: 'Datos de Acceso Abierto', href: '/open-access-data' },
+      ]
+    },
+    {
+      title: 'Soporte',
+      links: [
+        { name: 'Preguntas Frecuentes', href: '/faq' },
+        { name: 'Guía Rápida', href: '/quick-guide' },
+        { name: 'Enviar Comentarios', href: '/send-feedback' },
+        { name: 'Acerca de RITEC', href: '/about-ritec' },
+        { name: 'Política de Cookies', href: '/cookie-policy' },
+      ]
+    },
+    {
+      title: 'SIPeT',
+      links: [
+        { name: 'Proyectos de Tesis', href: '/thesis-projects' },
+        { name: 'Áreas de Investigación', href: '/research-areas' },
+        { name: 'Calendario Académico', href: '/academic-calendar' },
+        { name: 'Recursos', href: '/resources' },
+      ]
+    }
   ];
 
   return (
-    <footer className="w-full mt-auto" style={{ backgroundColor: '#211E1E' }}>
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Logo */}
-        <div className="mb-8">
-          <img 
-            src="/logo.png" 
-            alt="Universidad San Martín Logo" 
-            className="h-16 w-auto"
-            onError={(e) => {
-              // Fallback si no existe el logo
-              e.currentTarget.style.display = 'none';
-            }}
-          />
-        </div>
-
-        {/* Three Column Layout */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-8">
-          {/* Primera Columna */}
-          <div className="space-y-3">
-            {firstColumnLinks.map((link) => {
-              const IconComponent = link.icon;
-              return (
-                <button
-                  key={link.href}
-                  onClick={() => router.push(link.href)}
-                  className="flex items-center space-x-2 text-white/80 hover:text-white transition-colors text-sm p-2 rounded hover:bg-white/10 text-left w-full"
-                >
-                  <IconComponent className="w-4 h-4 flex-shrink-0" />
-                  <span>{link.name}</span>
-                </button>
-              );
-            })}
-          </div>
-
-          {/* Segunda Columna */}
-          <div className="space-y-3">
-            {secondColumnLinks.map((link) => {
-              const IconComponent = link.icon;
-              return (
-                <button
-                  key={link.href}
-                  onClick={() => router.push(link.href)}
-                  className="flex items-center space-x-2 text-white/80 hover:text-white transition-colors text-sm p-2 rounded hover:bg-white/10 text-left w-full"
-                >
-                  <IconComponent className="w-4 h-4 flex-shrink-0" />
-                  <span>{link.name}</span>
-                </button>
-              );
-            })}
-          </div>
-
-          {/* Tercera Columna - Texto Legal */}
-          <div className="text-white/70 text-xs leading-relaxed">
-            <p className="mb-4">
-              El usuario tiene la obligación de utilizar los servicios y contenidos proporcionados por la Universidad, 
-              en particular, los impresos y recursos electrónicos, de conformidad con la legislación vigente y los 
-              principios de buena fe y en general usos aceptados, sin contravenir con su realización el orden público, 
-              especialmente, en el caso en que, para el adecuado desempeño de su actividad, necesita reproducir, 
-              distribuir, comunicar y/o poner a disposición, fragmentos de obras impresas o susceptibles de estar en 
-              formato analógico o digital, ya sea en soporte papel o electrónico.
-            </p>
-            <p className="text-white/60">
-              <strong>Ley 23/2006, de 7 de julio,</strong> por la que se modifica el texto revisado de la Ley de 
-              Propiedad Intelectual, aprobado por el Real Decreto Legislativo 1/1996, de 12 de abril.
+    <footer className="w-full border-t border-gray-200" style={{ backgroundColor: '#0f1419' }}>
+      <div className="max-w-6xl mx-auto">
+        {/* Main Content */}
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-6 px-6 py-8">
+          {/* University Section */}
+          <div className="md:col-span-1">
+            <Image 
+              src="/logo.png" 
+              alt="Universidad San Martín" 
+              width={120}
+              height={32}
+              className="h-8 mb-3 opacity-90"
+              onError={(e) => {
+                e.currentTarget.style.display = 'none';
+              }}
+            />
+            <h3 className="text-white font-medium text-xs mb-2 tracking-wide">UNIVERSIDAD SAN MARTÍN</h3>
+            <p className="text-gray-400 text-xs leading-tight">
+              Sistema Integral para el Proceso y Evaluación de Tesis
             </p>
           </div>
+
+          {/* Footer Sections */}
+          {footerSections.map((section) => (
+            <div key={section.title} className="md:col-span-1">
+              <h4 className="text-white font-medium text-xs mb-3 tracking-wide uppercase">
+                {section.title}
+              </h4>
+              <ul className="space-y-1">
+                {section.links.map((link) => (
+                  <li key={link.href}>
+                    <button
+                      onClick={() => router.push(link.href)}
+                      className="text-gray-400 hover:text-white text-xs transition-colors duration-200 block w-full text-left"
+                    >
+                      {link.name}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
         </div>
 
-        {/* Copyright */}
-        <div className="border-t border-white/20 pt-4">
-          <div className="flex flex-col md:flex-row justify-between items-center text-white/60 text-xs">
-            <p>© 2025 Universidad San Martín - SIPeT. Todos los derechos reservados.</p>
-            <p className="mt-2 md:mt-0">Sistema Integral para el Proceso y Evaluación de Tesis</p>
+        {/* Bottom Section */}
+        <div className="border-t border-gray-800">
+          <div className="px-6 py-4 flex flex-col md:flex-row justify-between items-start md:items-center">
+            <div className="text-gray-500 text-xs">
+              <p>© 2025 Universidad San Martín. Todos los derechos reservados.</p>
+            </div>
+            <div className="text-gray-500 text-xs mt-2 md:mt-0 flex space-x-4">
+              <span>SIPeT v2.0</span>
+              <span>•</span>
+              <span>Desarrollado con Next.js</span>
+            </div>
           </div>
         </div>
       </div>
